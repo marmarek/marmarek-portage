@@ -1,0 +1,3 @@
+#!/bin/sh
+
+rsync -av --exclude xgl-coffee -e 'ssh -i /home/marmarek/.ssh/id_rsa' marmarek@nemezis:/usr/local/portage/ /usr/local/portage/

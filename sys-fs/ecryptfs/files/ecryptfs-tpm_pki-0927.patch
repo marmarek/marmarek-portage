@@ -1,0 +1,837 @@
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/configure.in ecryptfs-20060927-key/ecryptfs-util/configure.in
+--- ecryptfs-20060921/ecryptfs-util/configure.in	2006-09-21 13:31:47.000000000 -0500
++++ ecryptfs-20060927-key/ecryptfs-util/configure.in	2006-09-22 18:46:03.000000000 -0500
+@@ -16,6 +16,16 @@
+ AC_MINIX
+ AC_PROG_LIBTOOL
+ 
++# Check for optional TPM PKI support
++AC_CHECK_LIB(tspi, Tspi_Context_Create, [AM_CONDITIONAL(ECRYPTFS_PKI_TPM, true)
++	     AC_MSG_RESULT([*** Building TPM PKI Support ***])], [])
++
++# Check for optional OpenSSL PKI support
++AC_CHECK_LIB(crypto, RSA_generate_key, [AM_CONDITIONAL(ECRYPTFS_PKI_OPENSSL, true)
++	     AC_MSG_RESULT([*** Building OpenSSL PKI Support ***])], [])
++
++AC_CHECK_HEADER(gcrypt.h)
++
+ # Verify gcrypt
+ AC_CHECK_LIB(gcrypt, gcry_md_open, [], [
+ 		     echo "eCryptfs userspace tools require Libgcrypt."
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/src/libecryptfs/main.c ecryptfs-20060927-key/ecryptfs-util/src/libecryptfs/main.c
+--- ecryptfs-20060921/ecryptfs-util/src/libecryptfs/main.c	2006-09-21 13:31:48.000000000 -0500
++++ ecryptfs-20060927-key/ecryptfs-util/src/libecryptfs/main.c	2006-09-23 12:56:56.000000000 -0500
+@@ -185,8 +185,8 @@
+ 	/* The pki_type should be set based on the selected pki.
+ 	 * Currently the only offered pki is openssl */
+ 	/* TODO: ECRYPTFS_DEFAULT_PKI (see ecryptfs.h TODO) */
+-	strncpy(auth_tok->token.private_key.pki_type, ECRYPTFS_PKI_OPENSSL,
+-		ECRYPTFS_MAX_PKI_NAME_BYTES);
++	strncpy(auth_tok->token.private_key.pki_type, selected_pki->pki_name,
++		strlen(selected_pki->pki_name) + 1);
+ 	auth_tok->token.private_key.key_size = key_size;
+ 	auth_tok->token.private_key.data_len = pki_data_len;
+ 	strncpy(auth_tok->token.private_key.signature, passphrase_sig,
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/src/pki/ecryptfs_pki_tpm.c ecryptfs-20060927-key/ecryptfs-util/src/pki/ecryptfs_pki_tpm.c
+--- ecryptfs-20060921/ecryptfs-util/src/pki/ecryptfs_pki_tpm.c	1969-12-31 18:00:00.000000000 -0600
++++ ecryptfs-20060927-key/ecryptfs-util/src/pki/ecryptfs_pki_tpm.c	2006-09-28 00:30:41.000000000 -0500
+@@ -0,0 +1,533 @@
++/**
++ * Copyright (C) 2006 International Business Machines Corp.
++ * Author(s): Trevor S. Highland <trevor.highland@gmail.com>
++ *            Kent Yoder <kyoder@users.sf.net>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
++ * 02111-1307, USA.
++ */
++
++#include <pwd.h>
++#include <stdio.h>
++#include <string.h>
++#include <syslog.h>
++#include <errno.h>
++#include <endian.h>
++#include <byteswap.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++
++#include <trousers/tss.h>
++
++#include "../include/ecryptfs.h"
++
++#define RSA_KEY_SIZE_BYTES 128
++#define SHA_DIGEST_LENGTH  20
++
++#undef DEBUG
++
++#ifdef DEBUG
++#define LOG()			fprintf(stderr, "%s\n", __FUNCTION__)
++#define DBGSYSLOG(x, ...)	syslog(LOG_DEBUG, x, ##__VA_ARGS__)
++#define DBG_print_hex(a,b)	print_hex(a,b)
++void
++print_hex( BYTE *buf, UINT32 len )
++{
++	UINT32 i = 0, j;
++
++	while (i < len) {
++		for (j=0; (j < 15) && (i < len); j++, i++)
++			printf("%02x ", buf[i] & 0xff);
++		printf("\n");
++	}
++}
++#else
++#define LOG()
++#define DBGSYSLOG(x, ...)
++#define DBG_print_hex(a,b)
++#endif
++
++TSS_UUID srk_uuid = TSS_UUID_SRK;
++
++struct key_mapper
++{
++	TSS_UUID uuid;
++	TSS_HKEY hKey;
++	struct key_mapper *next;
++} *mapper = NULL;
++
++struct pki_tpm {
++	TSS_UUID uuid;
++	char *signature;
++};
++
++inline void tpm_to_hex(char *dst, char *src, int src_size)
++{
++        int x;
++
++        for (x = 0; x < src_size; x++)
++                sprintf(&dst[x * 2], "%.2x", (unsigned char)src[x]);
++}
++
++static void get_pki_data(unsigned char *data, struct pki_tpm *pki_data)
++{
++	LOG();
++	memcpy(&pki_data->uuid, data, sizeof(TSS_UUID));
++	pki_data->signature = data + sizeof(TSS_UUID);
++}
++
++static int generate_signature(BYTE *n, UINT32 nbytes, char *sig)
++{
++	int len, i;
++	char hash[SHA_DIGEST_LENGTH];
++	char *data = NULL;
++	int rc = 0;
++	BYTE e[] = { 1, 0, 1 }; // The e for all TPM RSA keys
++
++	LOG();
++	len = 10 + nbytes + sizeof(e);
++	data = malloc(3 + len);
++	if (!data) {
++		syslog(LOG_ERR, "Out of memory\n");
++		rc = -ENOMEM;
++		goto out;
++	}
++	i = 0;
++	data[i++] = '\x99';
++	data[i++] = (char)(len >> 8);
++	data[i++] = (char)len;
++	data[i++] = '\x04';
++	data[i++] = '\00';
++	data[i++] = '\00';
++	data[i++] = '\00';
++	data[i++] = '\00';
++	data[i++] = '\02';
++	data[i++] = (char)((nbytes * 8) >> 8);
++	data[i++] = (char)(nbytes * 8);
++	memcpy(&data[i], n, nbytes);
++	i += nbytes;
++	data[i++] = (char)((sizeof(e) * 8) >> 8);
++	data[i++] = (char)(sizeof(e) * 8);
++	memcpy(&data[i], e, sizeof(e));
++	i += sizeof(e);
++	SHA1(data, len + 3, hash);
++	tpm_to_hex(sig, hash, ECRYPTFS_SIG_SIZE);
++	sig[ECRYPTFS_SIG_SIZE_HEX] = '\0';
++out:
++	free(data);
++	return rc;
++}
++
++/* TODO: If sig == NULL, just return *length; the caller can use this
++ * information to allocate memory and call again. There should also be
++ * a max_length parameter. -Halcrow */
++int set_key_data(unsigned char *private_key_data, char *sig, int *length)
++{
++	struct pki_tpm pki_data;
++	BYTE *n;
++	UINT32 size_n;
++	TSS_RESULT result;
++	TSS_HCONTEXT hContext;
++	TSS_HKEY hKey;
++	int rc = 0;
++
++	LOG();
++	get_pki_data(private_key_data, &pki_data);
++
++	result = Tspi_Context_Create(&hContext);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_Context_Create failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	DBG_print_hex((BYTE *)&pki_data.uuid, sizeof(TSS_UUID));
++	result = Tspi_Context_GetKeyByUUID(hContext, TSS_PS_TYPE_USER,
++					   pki_data.uuid, &hKey);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_Context_GetKeyByUUID failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	result = Tspi_GetAttribData(hKey, TSS_TSPATTRIB_RSAKEY_INFO,
++				    TSS_TSPATTRIB_KEYINFO_RSA_MODULUS,
++				    &size_n, &n);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_GetAttribUint32 failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	*length = size_n;
++	rc = generate_signature(n, size_n, pki_data.signature);
++	memcpy(sig, pki_data.signature, ECRYPTFS_SIG_SIZE_HEX + 1);
++out:
++	return rc;
++}
++
++int encrypt(int size, char *from, char *to, unsigned char *private_key_data)
++{
++	TSS_RESULT result;
++	TSS_HCONTEXT hContext;
++	TSS_HKEY hKey;
++	TSS_HENCDATA hEncData;
++	UINT32 encdata_size;
++	BYTE *encdata;
++	int rc = 0;
++	struct pki_tpm pki_data;
++
++	LOG();
++	get_pki_data(private_key_data, &pki_data);
++
++	result = Tspi_Context_Create(&hContext);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_Context_Create failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	result = Tspi_Context_CreateObject(hContext, TSS_OBJECT_TYPE_ENCDATA,
++					   TSS_ENCDATA_BIND, &hEncData);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_Context_CreateObject failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	result = Tspi_Context_GetKeyByUUID(hContext, TSS_PS_TYPE_USER,
++					   pki_data.uuid, &hKey);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_Context_GetKeyByUUID failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	result = Tspi_Data_Bind(hEncData, hKey, size, from);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_Data_Bind failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	result = Tspi_GetAttribData(hEncData, TSS_TSPATTRIB_ENCDATA_BLOB,
++				    TSS_TSPATTRIB_ENCDATABLOB_BLOB,
++				    &encdata_size, &encdata);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_GetAttribData failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	memcpy(to, encdata, encdata_size);
++	Tspi_Context_FreeMemory(hContext, encdata);
++
++out:
++	return rc;
++}
++
++/* currently assumes that a single block is passed in for decryption */
++int decrypt(char *from, char *to, size_t *decrypted_key_size,
++	    unsigned char *private_key_data)
++{
++	TSS_RESULT result;
++	static TSS_HCONTEXT hDecryptContext = 0;
++	static TSS_HPOLICY hSRKPolicy = 0;
++	static TSS_HKEY hDecryptKey = 0, hSRK = 0;
++	static UINT32 decryptKeySize;
++	static TSS_HENCDATA hEncData;
++	UINT32 encdata_size;
++	BYTE *encdata;
++	int rc = 0;
++	struct pki_tpm pki_data;
++	struct key_mapper *walker, *new_mapper;
++
++	LOG();
++	get_pki_data(private_key_data, &pki_data);
++
++	if (!hDecryptContext) {
++		result = Tspi_Context_Create(&hDecryptContext);
++		if (result != TSS_SUCCESS) {
++			syslog(LOG_ERR, "Tspi_Context_Create failed: %s",
++					Trspi_Error_String(result));
++			rc = -1;
++			goto out_uninit;
++		}
++		DBGSYSLOG("New TSP context: 0x%x", hDecryptContext);
++
++		result = Tspi_Context_Connect(hDecryptContext, NULL);
++		if (result != TSS_SUCCESS) {
++			syslog(LOG_ERR, "Tspi_Context_Connect failed: %s",
++					Trspi_Error_String(result));
++			rc = -1;
++			goto out_uninit;
++		}
++
++		result = Tspi_Context_LoadKeyByUUID(hDecryptContext,
++						    TSS_PS_TYPE_SYSTEM,
++						    srk_uuid, &hSRK);
++		if (result != TSS_SUCCESS) {
++			syslog(LOG_ERR, "Tspi_Context_LoadKeyByUUID failed: %s",
++					Trspi_Error_String(result));
++			rc = -1;
++			goto out_uninit;
++		}
++
++		result = Tspi_GetPolicyObject(hSRK, TSS_POLICY_USAGE,
++					      &hSRKPolicy);
++		if (result != TSS_SUCCESS) {
++			syslog(LOG_ERR, "Tspi_GetPolicyObject failed: %s",
++					Trspi_Error_String(result));
++			rc = -1;
++			goto out_uninit;
++		}
++
++		result = Tspi_Policy_SetSecret(hSRKPolicy,
++					       TSS_SECRET_MODE_POPUP, 0, NULL);
++		if (result != TSS_SUCCESS) {
++			syslog(LOG_ERR, "Tspi_Policy_SetSecret failed: %s",
++					Trspi_Error_String(result));
++			rc = -1;
++			goto out_uninit;
++		}
++
++		result = Tspi_Context_CreateObject(hDecryptContext, TSS_OBJECT_TYPE_ENCDATA,
++						   TSS_ENCDATA_BIND, &hEncData);
++		if (result != TSS_SUCCESS) {
++			syslog(LOG_ERR, "Tspi_Context_CreateObject failed: %s",
++					Trspi_Error_String(result));
++			rc = -1;
++			goto out_uninit;
++		}
++	}
++
++	for (walker = mapper; walker; walker = walker->next) {
++		if (!memcmp(&walker->uuid, &pki_data.uuid, sizeof(TSS_UUID)))
++			break;
++	}
++
++	if (!walker) {
++		new_mapper = calloc(1, sizeof(struct key_mapper));
++		if (!new_mapper) {
++			syslog(LOG_ERR, "malloc failed: %s", strerror(errno));
++			rc = -1;
++			goto out;
++		}
++
++		result = Tspi_Context_GetKeyByUUID(hDecryptContext, TSS_PS_TYPE_USER,
++						   pki_data.uuid, &new_mapper->hKey);
++		if (result != TSS_SUCCESS) {
++			syslog(LOG_ERR, "Tspi_Context_LoadKeyByUUID failed: %s",
++					Trspi_Error_String(result));
++			rc = -1;
++			goto out;
++		}
++
++		DBGSYSLOG("New key object: 0x%x", new_mapper->hKey);
++
++		result = Tspi_Key_LoadKey(new_mapper->hKey, hSRK);
++		if (result != TSS_SUCCESS) {
++			syslog(LOG_ERR, "Tspi_Context_LoadKey failed: %s",
++					Trspi_Error_String(result));
++			rc = -1;
++			goto out;
++		}
++
++		memcpy(&new_mapper->uuid, &pki_data.uuid, sizeof(TSS_UUID));
++		new_mapper->next = mapper;
++		walker = mapper = new_mapper;
++	}
++
++	result = Tspi_GetAttribUint32(walker->hKey, TSS_TSPATTRIB_KEY_INFO,
++				      TSS_TSPATTRIB_KEYINFO_SIZE,
++				      &decryptKeySize);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_GetAttribUint32 failed: %s",
++				Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	encdata_size = decryptKeySize / 8;
++	result = Tspi_SetAttribData(hEncData, TSS_TSPATTRIB_ENCDATA_BLOB,
++				    TSS_TSPATTRIB_ENCDATABLOB_BLOB,
++				    encdata_size, (BYTE *)from);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_SetAttribData failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	result = Tspi_Data_Unbind(hEncData, walker->hKey, &encdata_size, &encdata);
++	if (result != TSS_SUCCESS) {
++		syslog(LOG_ERR, "Tspi_Data_Unbind failed: %s",
++		       Trspi_Error_String(result));
++		rc = -1;
++		goto out;
++	}
++
++	memcpy(to, encdata, encdata_size);
++	Tspi_Context_FreeMemory(hDecryptContext, encdata);
++	*decrypted_key_size = encdata_size;
++	return 0;
++
++out_uninit:
++	Tspi_Context_Close(hDecryptContext);
++	hDecryptContext = 0;
++	hSRKPolicy = 0;
++	hDecryptKey = 0;
++	hSRK = 0;
++out:
++	return rc;
++}
++
++/* TODO: This seems a bit magical. Should it be a NULL mode in a
++ * serialize function, perhaps? -Halcrow */
++int get_pki_data_length(struct ecryptfs_name_val_pair *pair)
++{
++	LOG();
++	return sizeof(TSS_UUID) + (2 + (ECRYPTFS_SIG_SIZE_HEX + 1));
++}
++
++struct pki_nvp_map_elem {
++	char *name;
++	uint32_t flags;
++};
++
++static struct pki_nvp_map_elem pki_nvp_map[] = {
++	{ "uuid", ECRYPTFS_ECHO },
++	{ NULL, 0 }
++};
++
++int generate_name_val_list(struct ecryptfs_name_val_pair *head)
++{
++	int i = 0;
++	int rc = 0;
++
++	LOG();
++	while (pki_nvp_map[i].name) {
++		head->next = malloc(sizeof(struct ecryptfs_name_val_pair));
++		if (!head->next) {
++			rc = -ENOMEM;
++			goto out;
++		}
++		head = head->next;
++		head->name = pki_nvp_map[i].name;
++		head->flags = pki_nvp_map[i].flags;
++		i++;
++	}
++	head->next = NULL;
++out:
++	return rc;
++}
++
++void
++string_to_uuid(char *str, TSS_UUID *uuid)
++{
++	BYTE tmp[sizeof(unsigned long) * 2 + 1];
++	unsigned long l;
++	UINT32 i;
++
++	LOG();
++	tmp[sizeof(unsigned long) * 2] = '\0';
++
++	for (i = 0; i < (sizeof(TSS_UUID) * 2); i += sizeof(unsigned long)*2) {
++		memcpy(tmp, &str[i], sizeof(unsigned long) * 2);
++		l = strtoul(tmp, NULL, 16);
++		l = htonl(l);
++		memcpy(&((BYTE *)uuid)[i/2], &l, sizeof(unsigned long));
++	}
++}
++
++/* TODO: In general, we should be passing the head of the lists
++ * around; the head's only job is to provide a pointer to the first
++ * real element in the list. Please update this function to reflect
++ * that. -Halcrow */
++int set_pki_data(struct ecryptfs_name_val_pair *pair, unsigned char *data)
++{
++	char *uuid_str = NULL;
++	TSS_UUID uuid;
++	size_t i = 0;
++
++	LOG();
++	while (pair) {
++		if (!pair->name)
++			;
++		else if (!strcmp(pair->name, "uuid"))
++			uuid_str = pair->value;
++		pair = pair->next;
++	}
++	if (uuid_str) {
++		string_to_uuid(uuid_str, &uuid);
++		memcpy(data, &uuid, sizeof(TSS_UUID));
++	} else {
++		return -1;
++	}
++	return 0;
++}
++
++/*
++ *	This really should be implemented in libecryptfs since it would be
++ *	redundant to define this inside of every library.
++ */
++int free_name_val_pairs(struct ecryptfs_name_val_pair *pair)
++{
++	struct ecryptfs_name_val_pair *next;
++
++	LOG();
++	while (pair) {
++		if (pair->value)
++			free(pair->value);
++		next = pair->next;
++		free(pair);
++		pair = next;
++	}
++}
++
++int init_pki(char **pki_name, struct ecryptfs_pki_elem *pki)
++{
++	int rc;
++
++	LOG();
++	rc = generate_name_val_list(&pki->nvp_head);
++	if (rc)
++		goto out;
++	if (asprintf(pki_name, "tpm") == -1) {
++		ecryptfs_syslog(LOG_ERR, "Out of memory\n");
++		goto out;
++	}
++	struct ecryptfs_pki_ops ops = {
++		&set_key_data,
++		NULL,//&generate_key,
++		&encrypt,
++		&decrypt,
++		&get_pki_data_length,
++		&set_pki_data,
++	};
++	memcpy(&pki->ops, &ops, sizeof(struct ecryptfs_pki_ops));
++out:
++	return 0;
++}
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/src/pki/Makefile.am ecryptfs-20060927-key/ecryptfs-util/src/pki/Makefile.am
+--- ecryptfs-20060921/ecryptfs-util/src/pki/Makefile.am	2006-09-21 13:31:48.000000000 -0500
++++ ecryptfs-20060927-key/ecryptfs-util/src/pki/Makefile.am	2006-09-22 18:39:43.000000000 -0500
+@@ -1,10 +1,28 @@
+-lib_LTLIBRARIES = libecryptfs_pki_openssl.la
++
++if ECRYPTFS_PKI_OPENSSL
++
++ECRYPTFS_OPENSSL_LIB = libecryptfs_pki_openssl.la
+ 
+ libecryptfs_pki_openssl_la_SOURCES = ecryptfs_pki_openssl.c
+ libecryptfs_pki_openssl_la_LDFLAGS = -lcrypto
+ 
++endif
++
++if ECRYPTFS_PKI_TPM
++
++ECRYPTFS_TPM_LIB = libecryptfs_pki_tpm.la
++
++libecryptfs_pki_tpm_la_SOURCES = ecryptfs_pki_tpm.c
++libecryptfs_pki_tpm_la_LDFLAGS = -ltspi
++
++endif
++
++lib_LTLIBRARIES = $(ECRYPTFS_OPENSSL_LIB) $(ECRYPTFS_TPM_LIB)
++
+ install-data-local:
+ 	mkdir -p $(DESTDIR)/usr/lib/ecryptfs/
++	$(INSTALL_DATA) $(DESTDIR)/$(libdir)/libecryptfs_pki_tpm.* $(DESTDIR)/usr/lib/ecryptfs/
+ 	$(INSTALL_DATA) $(DESTDIR)/$(libdir)/libecryptfs_pki_openssl.* $(DESTDIR)/usr/lib/ecryptfs/
++	rm -f $(DESTDIR)/usr/lib/ecryptfs/libecryptfs_pki_tpm*[0a]
+ 	rm -f $(DESTDIR)/usr/lib/ecryptfs/libecryptfs_pki_openssl*[0a]
+ 	rm -f $(DESTDIR)/usr/lib/libecryptfs_pki_*
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/src/utils/key_management.c ecryptfs-20060927-key/ecryptfs-util/src/utils/key_management.c
+--- ecryptfs-20060921/ecryptfs-util/src/utils/key_management.c	2006-09-21 13:31:48.000000000 -0500
++++ ecryptfs-20060927-key/ecryptfs-util/src/utils/key_management.c	2006-09-23 12:47:58.000000000 -0500
+@@ -98,7 +98,6 @@
+ 	free(auth_tok);
+ 	return rc;
+ }
+-
+ /**
+  * This is the common functionality used to put a public key derived key into
+  * the keyring, shared by both non-interactive and interactive signature
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/src/utils/Makefile.am ecryptfs-20060927-key/ecryptfs-util/src/utils/Makefile.am
+--- ecryptfs-20060921/ecryptfs-util/src/utils/Makefile.am	2006-09-21 13:31:48.000000000 -0500
++++ ecryptfs-20060927-key/ecryptfs-util/src/utils/Makefile.am	2006-09-22 18:48:31.000000000 -0500
+@@ -5,7 +5,7 @@
+ INCLUDES = -I../include
+ 
+ mount_ecryptfs_LDFLAGS = -lgpg-error -lkeyutils -L../libecryptfs -lecryptfs
+-mount_ecryptfs_SOURCES = mount.ecryptfs.c initialization_io.c gen_key.c key_management.c passphrase.c
++mount_ecryptfs_SOURCES = mount.ecryptfs.c initialization_io.c gen_key.c key_management.c passphrase.c tpm.c
+ ecryptfs_manager_LDFLAGS = -lgpg-error -lkeyutils -L../libecryptfs -lecryptfs
+ ecryptfs_manager_SOURCES = manager.c initialization_io.c gen_key.c key_management.c
+ test_SOURCES = test.c initialization_io.c
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/src/utils/mount.ecryptfs.c ecryptfs-20060927-key/ecryptfs-util/src/utils/mount.ecryptfs.c
+--- ecryptfs-20060921/ecryptfs-util/src/utils/mount.ecryptfs.c	2006-09-21 13:31:48.000000000 -0500
++++ ecryptfs-20060927-key/ecryptfs-util/src/utils/mount.ecryptfs.c	2006-09-23 12:47:12.000000000 -0500
+@@ -37,6 +37,7 @@
+ #include "initialization_io.h"
+ #include "key_management.h"
+ #include "passphrase.h"
++#include "tpm.h"
+ 
+ struct ecryptfs_nv_pair {
+ 	const int value;
+@@ -58,7 +59,7 @@
+ 		"mount -t ecryptfs [lower directory] [ecryptfs mount point]\n"
+ 		"Available options:\n"
+ 		"\tkey=<pki alias>\n"
+-		"\n\t\tAvailable pki aliases: passphrase\n"
++		"\n\t\tAvailable pki aliases: passphrase, tpm\n"
+ 		"\tpassthrough\n"
+ 		);
+ 	exit(-EINVAL);
+@@ -325,7 +326,7 @@
+ 	return rc;
+ }
+ 
+-enum { TYPE_ERROR, TYPE_PASSPHRASE };
++enum { TYPE_ERROR, TYPE_PASSPHRASE, TYPE_TPM };
+ /**
+  * Returns the type of key to process based on the alias
+  *
+@@ -337,6 +338,8 @@
+ 	     (strstr(key_str,"key=password") == key_str) ||
+ 	     (strstr(key_str,"key=passwd") == key_str) )
+ 		return TYPE_PASSPHRASE;
++	else if ( (strstr(key_str,"key=tpm") == key_str) )
++		return TYPE_TPM;
+ 	return TYPE_ERROR;
+ }
+ 
+@@ -355,6 +358,13 @@
+ 	case TYPE_ERROR:
+ 		fprintf(stderr, "Unknown key type\n");
+ 		return -EINVAL;
++	case TYPE_TPM:
++		if (!(version & ECRYPTFS_VERSIONING_PUBKEY)) {
++			fprintf(stderr, "No public key support "
++				"detected in the kernel module\n");
++			return -EINVAL;
++		}
++		return key_is_tpm(key_selection, auth_tok_sig);
+ 	case TYPE_PASSPHRASE:
+ 		if (!(version & ECRYPTFS_VERSIONING_PASSPHRASE)) {
+ 			fprintf(stderr, "No passphrase support "
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/src/utils/tpm.c ecryptfs-20060927-key/ecryptfs-util/src/utils/tpm.c
+--- ecryptfs-20060921/ecryptfs-util/src/utils/tpm.c	1969-12-31 18:00:00.000000000 -0600
++++ ecryptfs-20060927-key/ecryptfs-util/src/utils/tpm.c	2006-09-23 12:53:41.000000000 -0500
+@@ -0,0 +1,129 @@
++/**
++ * Copyright (C) 2006 International Business Machines
++ * Author(s): Michael C. Thompson <mcthomps@us.ibm.com>
++ *            Kent Yoder <kyoder@users.sf.net>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
++ * 02111-1307, USA.
++ */
++
++#include <errno.h>
++#include <fcntl.h>
++#include <gcrypt.h>
++#include <getopt.h>
++#include <keyutils.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/mman.h>
++#include <sys/mount.h>
++#include <sys/stat.h>
++#include <sys/types.h>
++
++#include <trousers/tss.h>
++
++#include "ecryptfs.h"
++#include "key_management.h"
++
++
++#define ECRYPTFS_UUID_SIZE	(sizeof(TSS_UUID) * 2)
++
++/**
++ *
++ * key_str="key=tpm:uuid=..."
++ *
++ */
++int key_is_tpm(char *key_str, char *auth_tok_sig)
++{
++	int rc, passphrase_source = 0;
++	char *uuid_ptr = NULL;
++	char *cur_opt = NULL, *next_opt = NULL;
++	char uuid[ECRYPTFS_UUID_SIZE];
++	struct ecryptfs_ctx ecryptfs_ctx;
++	struct ecryptfs_pki_elem *curr, *tpm_pki = NULL;
++
++	cur_opt = key_str;
++	while (cur_opt) {
++		int action = -1, i;
++		size_t len;
++
++		next_opt = strchr(cur_opt,':');
++		if (next_opt) {
++			*next_opt = '\0';
++			next_opt++;
++		}
++		if (strstr(cur_opt,"key=") == cur_opt) {
++			cur_opt = next_opt;
++			continue;
++		} else if (strstr(cur_opt,"uuid=") == cur_opt) {
++			if (uuid_ptr) {
++				fprintf(stderr, "UUID specified twice\n");
++				rc = -EINVAL;
++				goto out;
++			}
++			uuid_ptr = strchr(cur_opt,'=') + 1;
++			len = strlen(uuid_ptr);
++			/* TODO: Make this read in characeters and convert
++			 * 	them to hex values */
++			if (len != ECRYPTFS_UUID_SIZE) {
++				fprintf(stderr, "UUID value is too short, must "
++					"be %d characters long\n",
++					ECRYPTFS_UUID_SIZE);
++				rc = -EINVAL;
++				goto out;
++			}
++			memcpy(uuid, uuid_ptr, ECRYPTFS_UUID_SIZE);
++		} else
++			fprintf(stderr, "Unknown option for the TPM PKI\n");
++		cur_opt = next_opt;
++	}
++
++	/* Point of no-return for trying interactive mount */
++	if (!uuid_ptr) {
++		fprintf(stderr, "No uuid specified, failing mount\n");
++		rc = -EINVAL;
++		goto out;
++	}
++
++	memset(&ecryptfs_ctx, 0, sizeof(struct ecryptfs_ctx));
++	if (rc = ecryptfs_get_pki_list(&ecryptfs_ctx))
++		goto out;
++	curr = ecryptfs_ctx.pki_list_head.next;
++	if (!curr) {
++		rc = -1;
++		fprintf(stderr, "TPM PKI not found\n");
++		goto out;
++	}
++	while (curr) {
++		if (!memcmp("tpm", curr->pki_name, 3)) // XXX
++			break;
++		curr = curr->next;
++		if (curr == NULL) {
++			rc = -1;
++			fprintf(stderr, "TPM PKI not found\n");
++			goto out;
++		}
++	}
++	tpm_pki = curr;
++
++	tpm_pki->nvp_head.name = "uuid";
++	tpm_pki->nvp_head.value = uuid_ptr;
++	tpm_pki->nvp_head.next = NULL;
++
++	rc = add_public_key_key_to_keyring(auth_tok_sig, tpm_pki);
++	rc = (rc >= 0) ? 0 : rc;
++out:
++	return rc;
++}
+diff -urN -X ecryptfs.exclude ecryptfs-20060921/ecryptfs-util/src/utils/tpm.h ecryptfs-20060927-key/ecryptfs-util/src/utils/tpm.h
+--- ecryptfs-20060921/ecryptfs-util/src/utils/tpm.h	1969-12-31 18:00:00.000000000 -0600
++++ ecryptfs-20060927-key/ecryptfs-util/src/utils/tpm.h	2006-09-23 11:08:33.000000000 -0500
+@@ -0,0 +1,21 @@
++/**
++ * Copyright (C) 2006 International Business Machines
++ * Author(s): Kent Yoder <kyoder@users.sf.net>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
++ * 02111-1307, USA.
++ */
++
++int key_is_tpm(char *key_str, char *auth_tok_sig);

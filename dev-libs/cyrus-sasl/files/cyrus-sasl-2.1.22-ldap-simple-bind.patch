@@ -1,0 +1,17 @@
+--- plugins/ldapdb.c	2005-02-19 03:26:31.000000000 +0100
++++ plugins/ldapdb.c.new	2007-07-06 18:16:44.050282739 +0200
+@@ -103,8 +103,12 @@
+ 	return i;
+     }
+ 
+-    i = ldap_sasl_interactive_bind_s(cp->ld, NULL, ctx->mech.bv_val, NULL,
+-    	NULL, LDAP_SASL_QUIET, ldapdb_interact, ctx);
++    if (!strncmp(ctx->mech.bv_val,"SIMPLE",ctx->mech.bv_len)) {
++    	i = ldap_simple_bind_s(cp->ld, ctx->id.bv_val, ctx->pw.bv_val);
++    } else {
++	i = ldap_sasl_interactive_bind_s(cp->ld, NULL, ctx->mech.bv_val, NULL,
++	    NULL, LDAP_SASL_QUIET, ldapdb_interact, ctx);
++    }
+     if (i != LDAP_SUCCESS) {
+     	sparams->utils->free(authzid);
+ 	return i;

@@ -1,0 +1,12 @@
+AUX nagios-snmp-plugins-1.0-compilefix.patch 990 RMD160 d6aa1495df804f5b38d2ebefeb482396d7d8044c SHA1 aa4dcd8b2a23728cecbbb323862969d59d1461cf SHA256 6a670e1758accdd41577a651c19cf12c8d464b57c65ebe22209139a828b3e9fa
+MD5 7914c978668aa41d52a9e9eea66649d1 files/nagios-snmp-plugins-1.0-compilefix.patch 990
+RMD160 d6aa1495df804f5b38d2ebefeb482396d7d8044c files/nagios-snmp-plugins-1.0-compilefix.patch 990
+SHA256 6a670e1758accdd41577a651c19cf12c8d464b57c65ebe22209139a828b3e9fa files/nagios-snmp-plugins-1.0-compilefix.patch 990
+DIST nagios-snmp-plugins-1.0.tar.gz 14793 RMD160 31f2b64ab6dc3a01bc695e3b1b62807a1040d360 SHA1 0a1c88dc486bc5fd709f192de6df240d60f8f8cb SHA256 dd0dd45d941ffe2ab3ae04de98e1fc2c2bd88d080bff333ce4458cfabb110897
+EBUILD nagios-snmp-plugins-1.0.ebuild 764 RMD160 773c07fa2c8dd61ce89e749fe0c2fbfd86391299 SHA1 f1648dcf20a9c7acc90d26b3e67b54754014412d SHA256 f089fb53c5c96e2304b977de06e3d3eb9d9ff21ff6c91d663688072ebd3f8688
+MD5 5f2a55d05e592da511b8a1e41633eddf nagios-snmp-plugins-1.0.ebuild 764
+RMD160 773c07fa2c8dd61ce89e749fe0c2fbfd86391299 nagios-snmp-plugins-1.0.ebuild 764
+SHA256 f089fb53c5c96e2304b977de06e3d3eb9d9ff21ff6c91d663688072ebd3f8688 nagios-snmp-plugins-1.0.ebuild 764
+MD5 cb920b85e3b9910311769a2240d3d727 files/digest-nagios-snmp-plugins-1.0 268
+RMD160 7b187bd99d766bfff714784cdf8126e415637d29 files/digest-nagios-snmp-plugins-1.0 268
+SHA256 699803efdaccaa0b3a0f527d42d5af071cd67c0ceac431a52db9eab53c7d2431 files/digest-nagios-snmp-plugins-1.0 268

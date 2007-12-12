@@ -1,0 +1,670 @@
+diff -Narc dcron/CHANGELOG /home/users/marmarek/dcron/CHANGELOG
+*** dcron/CHANGELOG	Tue Dec 17 21:07:33 2002
+--- /home/users/marmarek/dcron/CHANGELOG	Sat Oct 21 22:57:56 2006
+***************
+*** 1,3 ****
+--- 1,15 ----
++ v2.9+ - TEMHOTA <temnota@kmv.ru>
++ 	Adding SIGHUP signal handler. crond die when init send to it SIGHUP.
++ 	Rewrtited all loging code. Added logging through syslog and normal
++ 	logging to file. 
++ 
++ 	Technical details:
++ 	+ logging through syslog used facility LOG_CRON
++ 	+ log_err - now *always* write message to logger (if selected logging
++ 	  through syslog - message send as LOG_ERR).
++ 	+ log9 - sends message hrough syslog loglevel LOG_WARNING
++ 	+ for all other log levels - default syslog loglevel LOG_NOTICE
++ 
+  v2.9
+      Modernize the code, remove strcpy() and sprintf() in favor of snprintf().
+      (Supplied by Christine Jamison <technobabe@mail.nwmagic.net>)
+diff -Narc dcron/Makefile /home/users/marmarek/dcron/Makefile
+*** dcron/Makefile	Sat Oct 21 23:26:42 2006
+--- /home/users/marmarek/dcron/Makefile	Sat Oct 21 22:55:11 2006
+***************
+*** 27,33 ****
+  	rm -f crond crontab
+  
+  cleano:
+! 	rm -f *.o dcron.tgz $(PROTOS)
+  
+  install:
+  	rm -f /usr/bin/crond /usr/bin/crontab
+--- 27,33 ----
+  	rm -f crond crontab
+  
+  cleano:
+! 	rm -f *.o dcron.tgz $(PROTOS) *~
+  
+  install:
+  	rm -f /usr/bin/crond /usr/bin/crontab
+diff -Narc dcron/crontab.c /home/users/marmarek/dcron/crontab.c
+*** dcron/crontab.c	Sat Oct 21 23:26:43 2006
+--- /home/users/marmarek/dcron/crontab.c	Sat Oct 21 22:55:11 2006
+***************
+*** 15,20 ****
+--- 15,23 ----
+  char  *CDir = CRONTABS;
+  int   UserId;
+  short LogLevel = 9;
++ short DebugOpt = 0;
++ short LoggerOpt = 0;
++ char  *LogFile = LOG_FILE;
+  
+  void EditFile(const char *user, const char *file);
+  int GetReplaceStream(const char *user, const char *file);
+diff -Narc dcron/defs.h /home/users/marmarek/dcron/defs.h
+*** dcron/defs.h	Tue Dec 17 21:06:51 2002
+--- /home/users/marmarek/dcron/defs.h	Sat Oct 21 22:59:47 2006
+***************
+*** 17,22 ****
+--- 17,25 ----
+  #include <pwd.h>
+  #include <unistd.h>
+  #include <grp.h>
++ #include <syslog.h>
++ #include <signal.h>
++ #include <getopt.h>
+  #include <sys/ioctl.h>
+  #include <sys/wait.h>
+  #include <sys/stat.h>
+***************
+*** 31,36 ****
+--- 34,42 ----
+  #ifndef TMPDIR
+  #define TMPDIR		"/tmp"
+  #endif
++ #ifndef LOG_FILE
++ #define LOG_FILE	"/var/log/cron"
++ #endif
+  #ifndef OPEN_MAX
+  #define OPEN_MAX	256
+  #endif
+diff -Narc dcron/job.c /home/users/marmarek/dcron/job.c
+*** dcron/job.c	Tue Dec 17 21:05:35 2002
+--- /home/users/marmarek/dcron/job.c	Sat Oct 21 23:10:57 2006
+***************
+*** 16,22 ****
+  {
+      char mailFile[128];
+      int mailFd;
+! 
+      line->cl_Pid = 0;
+      line->cl_MailFlag = 0;
+  
+--- 16,22 ----
+  {
+      char mailFile[128];
+      int mailFd;
+!      
+      line->cl_Pid = 0;
+      line->cl_MailFlag = 0;
+  
+***************
+*** 59,72 ****
+  	    log(5, "Child Running %s\n", line->cl_Shell);
+  
+  	/*
+- 	 * Setup close-on-exec descriptor in case exec fails
+- 	 */
+- 
+- 	dup2(2, 8);
+- 	fcntl(8, F_SETFD, 1);
+- 	fclose(stderr);
+- 
+- 	/*
+  	 * stdin is already /dev/null, setup stdout and stderr
+  	 */
+  
+--- 59,64 ----
+***************
+*** 78,84 ****
+  	    /*
+  	     * note: 8 is a descriptor, not a log level
+  	     */
+! 	    logfd(8, "unable to create mail file user %s file %s, output to /dev/null\n",
+  	        file->cf_User,
+  	        mailFile
+  	    );
+--- 70,76 ----
+  	    /*
+  	     * note: 8 is a descriptor, not a log level
+  	     */
+! 	    log_err("unable to create mail file user %s file %s, output to /dev/null\n",
+  	        file->cf_User,
+  	        mailFile
+  	    );
+***************
+*** 87,93 ****
+  	/*
+  	 * note: 8 is a descriptor, not a log level
+  	 */
+! 	logfd(8, "unable to exec, user %s cmd /bin/sh -c %s\n", 
+  	    file->cf_User,
+  	    line->cl_Shell
+  	);
+--- 79,85 ----
+  	/*
+  	 * note: 8 is a descriptor, not a log level
+  	 */
+! 	log_err("unable to exec, user %s cmd /bin/sh -c %s\n", 
+  	    file->cf_User,
+  	    line->cl_Shell
+  	);
+***************
+*** 97,103 ****
+  	/*
+  	 * PARENT, FORK FAILED
+  	 */
+!         log9("couldn't fork, user %s\n", file->cf_User);
+          line->cl_Pid = 0;
+          remove(mailFile);
+      } else {
+--- 89,95 ----
+  	/*
+  	 * PARENT, FORK FAILED
+  	 */
+!         log_err("couldn't fork, user %s\n", file->cf_User);
+          line->cl_Pid = 0;
+          remove(mailFile);
+      } else {
+***************
+*** 166,171 ****
+--- 158,164 ----
+      if (mailFd < 0) {
+          return;
+      }
++ 
+      if (fstat(mailFd, &sbuf) < 0 || 
+          sbuf.st_uid != DaemonUid || 
+          sbuf.st_nlink != 0 ||
+***************
+*** 192,206 ****
+  	}
+  
+  	/*
+- 	 * create close-on-exec log descriptor in case exec fails
+- 	 */
+- 
+- 	dup2(2, 8);
+- 	fcntl(8, F_SETFD, 1);
+- 
+- 	fclose(stderr);
+- 
+- 	/*
+  	 * run sendmail with mail file as standard input, only if
+  	 * mail file exists!
+  	 */
+--- 185,190 ----
+***************
+*** 213,219 ****
+  	/*
+  	 * note: 8 is a file descriptor
+  	 */
+! 	logfd(8, "unable to exec %s %s, user %s, output to sink null", 
+  	    SENDMAIL,
+  	    SENDMAIL_ARGS,
+  	    file->cf_User
+--- 197,203 ----
+  	/*
+  	 * note: 8 is a file descriptor
+  	 */
+! 	log_err("unable to exec %s %s, user %s, output to sink null", 
+  	    SENDMAIL,
+  	    SENDMAIL_ARGS,
+  	    file->cf_User
+***************
+*** 223,229 ****
+  	/*
+  	 * PARENT, FORK FAILED
+  	 */
+! 	log9("unable to fork, user %s", file->cf_User);
+  	line->cl_Pid = 0;
+      } else {
+  	/*
+--- 207,213 ----
+  	/*
+  	 * PARENT, FORK FAILED
+  	 */
+! 	log_err("unable to fork, user %s", file->cf_User);
+  	line->cl_Pid = 0;
+      } else {
+  	/*
+diff -Narc dcron/main.c /home/users/marmarek/dcron/main.c
+*** dcron/main.c	Sat Oct 21 23:26:43 2006
+--- /home/users/marmarek/dcron/main.c	Sat Oct 21 22:55:11 2006
+***************
+*** 15,28 ****
+  Prototype short DebugOpt;
+  Prototype short LogLevel;
+  Prototype short ForegroundOpt;
+! Prototype char *CDir;
+! Prototype int DaemonUid;
+  
+  short DebugOpt;
+  short LogLevel = 8;
+! short ForegroundOpt;
+  char  *CDir = CRONTABS;
+! int DaemonUid;
+  
+  int
+  main(int ac, char **av)
+--- 15,32 ----
+  Prototype short DebugOpt;
+  Prototype short LogLevel;
+  Prototype short ForegroundOpt;
+! Prototype short LoggerOpt;
+! Prototype char  *CDir;
+! Prototype char  *LogFile;
+! Prototype uid_t DaemonUid;
+  
+  short DebugOpt;
+  short LogLevel = 8;
+! short ForegroundOpt = 0;
+! short LoggerOpt;
+  char  *CDir = CRONTABS;
+! char  *LogFile = LOG_FILE;
+! uid_t DaemonUid;
+  
+  int
+  main(int ac, char **av)
+***************
+*** 35,82 ****
+  
+      DaemonUid = getuid();
+  
+!     for (i = 1; i < ac; ++i) {
+!         char *ptr = av[i];
+  
+!         if (*ptr == '-') {
+! 	    ptr += 2;
+! 
+! 	    switch(ptr[-1]) {
+  	    case 'l':
+! 		LogLevel = (*ptr) ? strtol(ptr, NULL, 0) : 1;
+! 		continue;
+  	    case 'd':
+! 		DebugOpt = (*ptr) ? strtol(ptr, NULL, 0) : 1;
+  		LogLevel = 0;
+  		/* fall through */
+  	    case 'f':
+  		ForegroundOpt = 1;
+! 		continue;
+  	    case 'b':
+  	        ForegroundOpt = 0;
+! 	        continue;
+  	    case 'c':
+! 		CDir = (*ptr) ? ptr : av[++i];
+! 		continue;
+  	    default:
+  		break;
+! 	    }
+! 	}
+! 	break;	/* error */
+!     }
+! 
+!     /*
+!      * check for parse error
+!      */
+! 
+!     if (i != ac) {
+!         if (i > ac)
+!             puts("expected argument for option");
+! 	printf("dcron " VERSION "\n");
+! 	printf("dcron -d[#] -l[#] -f -b -c dir\n");
+! 	exit(1);
+      }
+! 
+      /*
+       * change directory
+       */
+--- 39,87 ----
+  
+      DaemonUid = getuid();
+  
+!     opterr = 0;		/* disable getopt 'errors' message.*/
+  
+!     while ((i = getopt(ac,av,"d:l:L:fbSc:")) != EOF){
+! 	
+!   	switch (i){
+  	    case 'l':
+! 		LogLevel = atoi(optarg);
+!                 break;
+  	    case 'd':
+! 		DebugOpt = atoi(optarg);
+  		LogLevel = 0;
+  		/* fall through */
++ 		break;
+  	    case 'f':
+  		ForegroundOpt = 1;
+! 		break;
+  	    case 'b':
+  	        ForegroundOpt = 0;
+! 	        break;
+! 	    case 'S':			/* select logging to syslog */
+! 		LoggerOpt = 0;
+! 		break;
+! 	    case 'L':			/* select internal file logger */
+! 	        LoggerOpt = 1;
+! 	        if (*optarg != 0) LogFile = optarg;
+! 	        break;
+  	    case 'c':
+! 		if (*optarg != 0) CDir = optarg;
+! 		break;
+  	    default:
++                 /*
++                  * parse error
++                  */
++ 	        printf("dcron " VERSION "\n");
++ 	        printf("dcron -d [#] -l [#] -S -L logfile -f -b -c dir\n");
++ 	        printf("-d num\tdebug level\n-l num\tlog level (8 - default)\n-S\tlog to syslod (defualt)\n");
++ 	        printf("-L file\tlog to file\n-f\trun in fordeground\n");
++ 	        printf("-b\trun in background (default)\n-c dir\tworking dir\n");
++ 	        exit(1);
+  		break;
+!         }
+      }
+!     
+      /*
+       * change directory
+       */
+***************
+*** 87,100 ****
+      }
+  
+      /*
+!      * close stdin and stdout (stderr normally redirected by caller).
+!      * close unused descriptors
+       * optional detach from controlling terminal
+       */
+  
+      fclose(stdin);
+      fclose(stdout);
+! 
+      i = open("/dev/null", O_RDWR);
+      if (i < 0) {
+          perror("open: /dev/null:");
+--- 92,106 ----
+      }
+  
+      /*
+!      * close stdin and stdout, stderr.
+!      * close unused descriptors -  don't need.
+       * optional detach from controlling terminal
+       */
+  
+      fclose(stdin);
+      fclose(stdout);
+!     fclose(stderr);
+!     
+      i = open("/dev/null", O_RDWR);
+      if (i < 0) {
+          perror("open: /dev/null:");
+***************
+*** 102,116 ****
+      }
+      dup2(i, 0);
+      dup2(i, 1);
+! 
+!     for (i = 3; i < OPEN_MAX; ++i) {
+!         close(i);
+!     }
+  
+      if (ForegroundOpt == 0) {
+          int fd;
+          int pid;
+! 
+          if ((fd = open("/dev/tty", O_RDWR)) >= 0) {
+              ioctl(fd, TIOCNOTTY, 0);
+              close(fd);
+--- 108,121 ----
+      }
+      dup2(i, 0);
+      dup2(i, 1);
+!     dup2(i, 2);
+  
+      if (ForegroundOpt == 0) {
+          int fd;
+          int pid;
+! 	if (setsid() < 0)
+! 	    perror("setsid");
+! 	    
+          if ((fd = open("/dev/tty", O_RDWR)) >= 0) {
+              ioctl(fd, TIOCNOTTY, 0);
+              close(fd);
+***************
+*** 132,144 ****
+  			exit(0);
+  		}
+      }
+! 
+      /* 
+       * main loop - synchronize to 1 second after the minute, minimum sleep
+       *             of 1 second.
+       */
+  
+!     log9("%s " VERSION " dillon, started\n", av[0]);
+      SynchronizeDir(".");
+  
+      {
+--- 137,153 ----
+  			exit(0);
+  		}
+      }
+!     
+!     (void)startlogger();		/* need if syslog mode selected */
+!     (void)initsignals();		/* set some signal handlers */
+!     
+      /* 
+       * main loop - synchronize to 1 second after the minute, minimum sleep
+       *             of 1 second.
+       */
+  
+!     log(9,"%s " VERSION " dillon, started, log level %d\n", av[0], LogLevel);
+! 
+      SynchronizeDir(".");
+  
+      {
+diff -Narc dcron/subs.c /home/users/marmarek/dcron/subs.c
+*** dcron/subs.c	Wed Feb 10 07:31:46 1999
+--- /home/users/marmarek/dcron/subs.c	Sat Oct 21 23:23:50 2006
+***************
+*** 10,20 ****
+  
+  Prototype void log(int level, const char *ctl, ...);
+  Prototype void log9(const char *ctl, ...);
+! Prototype void logfd(int fd, const char *ctl, ...);
+  Prototype void fdprintf(int fd, const char *ctl, ...);
+  Prototype int ChangeUser(const char *user, short dochdir);
+! Prototype void vlog(int level, int fd, const char *ctl, va_list va);
+! Prototype int slog(char *buf, const char *ctl, int nmax, va_list va, short useDate);
+  
+  void 
+  log9(const char *ctl, ...)
+--- 10,25 ----
+  
+  Prototype void log(int level, const char *ctl, ...);
+  Prototype void log9(const char *ctl, ...);
+! Prototype void log_err(const char *ctl, ...);
+  Prototype void fdprintf(int fd, const char *ctl, ...);
++ Prototype void vlog(int level, int MLOG_LEVEL, const char *ctl, va_list va);
+  Prototype int ChangeUser(const char *user, short dochdir);
+! Prototype void startlogger(void);
+! Prototype void initsignals(void);
+! 
+! /*
+!       set log_level=9 and log messages
+! */
+  
+  void 
+  log9(const char *ctl, ...)
+***************
+*** 22,51 ****
+      va_list va;
+  
+      va_start(va, ctl);
+!     vlog(9, 2, ctl, va);
+      va_end(va);
+  }
+  
+  void 
+  log(int level, const char *ctl, ...)
+  {
+      va_list va;
+  
+      va_start(va, ctl);
+!     vlog(level, 2, ctl, va);
+      va_end(va);
+  }
+  
+  void 
+! logfd(int fd, const char *ctl, ...)
+  {
+      va_list va;
+  
+      va_start(va, ctl);
+!     vlog(9, fd, ctl, va);
+      va_end(va);
+  }
+  
+  void 
+  fdprintf(int fd, const char *ctl, ...)
+  {
+--- 27,70 ----
+      va_list va;
+  
+      va_start(va, ctl);
+!     vlog(9, LOG_WARNING, ctl, va);
+      va_end(va);
+  }
+  
++ /*
++       normal logger call point.
++ */
++ 
+  void 
+  log(int level, const char *ctl, ...)
+  {
+      va_list va;
+  
+      va_start(va, ctl);
+!     vlog(level, LOG_NOTICE, ctl, va);
+      va_end(va);
+  }
+  
++ /*
++       Original: void
++                 logfd(int fd, const char *ctl, ...)
++       Updated to: log_error (used by jobs.c)
++ */
++ 
+  void 
+! log_err(const char *ctl, ...)
+  {
+      va_list va;
+  
+      va_start(va, ctl);
+!     vlog(20, LOG_ERR, ctl, va);
+      va_end(va);
+  }
+  
++ /*
++       used by jobs.c (write to temp file..)
++ */
++ 
+  void 
+  fdprintf(int fd, const char *ctl, ...)
+  {
+***************
+*** 59,87 ****
+  }
+  
+  void
+! vlog(int level, int fd, const char *ctl, va_list va)
+  {
+      char buf[2048];
+!     short n;
+!     static short useDate = 1;
+  
+      if (level >= LogLevel) {
+-         write(fd, buf, n = slog(buf, ctl, sizeof(buf), va, useDate));
+- 	useDate = (n && buf[n-1] == '\n');
+-     }
+- }
+  
+! int
+! slog(char *buf, const char *ctl, int nmax, va_list va, short useDate)
+! {
+!     time_t t = time(NULL);
+!     struct tm *tp = localtime(&t);
+  
+!     buf[0] = 0;
+!     if (useDate)
+! 	strftime(buf, 128, "%d-%b-%y %H:%M  ", tp);
+!     vsnprintf(buf + strlen(buf), nmax, ctl, va);
+!     return(strlen(buf));
+  }
+  
+  int
+--- 78,103 ----
+  }
+  
+  void
+! vlog(int level, int MLOG_LEVEL, const char *ctl, va_list va)
+  {
+      char buf[2048];
+!     int  logfd;
+  
+      if (level >= LogLevel) {
+  
+!       vsnprintf(buf,sizeof(buf), ctl, va);
+!       if (DebugOpt) fprintf(stderr,"%s",buf);
+!       else
+!           if (LoggerOpt == 0) syslog(MLOG_LEVEL, "%s",buf );
+!             else {
+!                  if ((logfd = open(LogFile,O_WRONLY|O_CREAT|O_APPEND,600)) >= 0){
+!                     write(logfd, buf, strlen(buf));
+!                     close(logfd);
+!                  } else
+!                     fprintf(stderr,"Can't open log file. Err: %s",strerror(errno));
+!             }
+  
+!     }
+  }
+  
+  int
+***************
+*** 130,135 ****
+--- 146,176 ----
+      return(pas->pw_uid);
+  }
+  
++ void
++ startlogger(void){
++ int  logfd;
++ 
++     if (LoggerOpt == 0)
++       openlog("crond",LOG_CONS|LOG_PID,LOG_CRON);
++ 
++     else { /* test logfile */
++         if ((logfd = open(LogFile,O_WRONLY|O_CREAT|O_APPEND,600)) >= 0)
++            close(logfd);
++         else
++            printf("Failed to open log file '%s' reason: %s",LogFile,strerror(errno));
++     }
++ }
++ 
++ 
++ void
++ initsignals(void){
++ 
++       signal(SIGHUP,SIG_IGN); /* hmm.. but, if kill -HUP original
++                                  * version - his died. ;(
++                                  */
++ 
++ }
++ 
+  #if 0
+  
+  char *

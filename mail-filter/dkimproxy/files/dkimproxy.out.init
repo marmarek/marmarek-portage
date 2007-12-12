@@ -1,0 +1,40 @@
+#!/sbin/runscript
+# Copyright 1999-2007 Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+# $Header: $
+
+depend() {
+	after net
+	before postfix
+}
+
+start() {
+	if [ -z "$DKIM_KEY" ]; then
+		eerror "Key file not specified!"
+		return 1
+	fi
+	ebegin "Starting dkimproxy.out"
+	start-stop-daemon --start --pidfile /var/run/dkimproxy.out.pid \
+		--exec /usr/sbin/dkimproxy.out -- \
+		--daemonize \
+		--pidfile="/var/run/dkimproxy.out.pid" \
+		--user="$DKIM_USER" \
+		--group="$DKIM_GROUP" \
+		--selector="$DKIM_SELECTOR" \
+		--reject-error \
+		--keyfile="$DKIM_KEY" \
+		--domain="$DKIM_DOMAIN" \
+		--signature=dkim \
+		$DKIM_LISTEN \
+		$DKIM_SEND
+	eend $?	
+}
+
+stop() {
+	start-stop-daemon --stop --pidfile /var/run/dkimproxy.out.pid
+}
+
+restart() {
+	stop
+	start
+}

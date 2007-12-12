@@ -1,0 +1,17 @@
+--- gammu-1.10.0/common/phone/at/atgen.c	Sat Nov 19 23:55:30 2005
++++ gammu-1.10.0.new/common/phone/at/atgen.c	Fri Jan  6 14:48:19 2006
+@@ -2750,12 +2750,12 @@
+ 	Priv->NextMemoryEntry		= 0;
+ 	while (1) {
+ 		end	= start + 20;
+-		if (end > Priv->MemorySize) end = Priv->MemorySize;
++		if (end > Priv->FirstMemoryEntry+Priv->MemorySize) end = Priv->FirstMemoryEntry+Priv->MemorySize-1;
+ 		sprintf(req, "AT+CPBR=%i,%i\r", start, end);
+ 		error	= GSM_WaitFor (s, req, strlen(req), 0x00, 4, ID_GetMemoryStatus);
+ 		if (error != ERR_NONE) return error;
+ 		if (NeededInfo == AT_NextEmpty && Priv->NextMemoryEntry != 0 && Priv->NextMemoryEntry != end + 1) return ERR_NONE;
+-		if (end == Priv->MemorySize) {
++		if (end == Priv->FirstMemoryEntry+Priv->MemorySize-1) {
+ 			Status->MemoryFree = Priv->MemorySize - Status->MemoryUsed;
+ 			return ERR_NONE;
+ 		}

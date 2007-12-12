@@ -1,0 +1,82 @@
+#!/sbin/runscript
+# Copyright 1999-2007 Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+# $Header: /var/cvsroot/gentoo-x86/net-fs/nfs-utils/files/rpc.idmapd.initd,v 1.3 2007/05/12 11:27:06 vapier Exp $
+
+[ -e /etc/conf.d/nfs ] && . /etc/conf.d/nfs
+
+rpc_bin=/usr/sbin/rpc.idmapd
+
+# since baselayout doesn't export this sort of information, we need
+# to hack around it ... this is to keep from needlessly unmounting/mounting
+# rpc_pipefs during a restart ...
+restarting="no"
+
+depend() {
+	use ypbind net
+	need portmap
+	after quota
+}
+
+mount_pipefs() {
+	if grep -qs rpc_pipefs /proc/filesystems ; then
+		if ! grep -qs "rpc_pipefs /var/lib/nfs/rpc_pipefs" /proc/mounts ; then
+			ebegin "Mounting RPC pipefs"
+			mount -t rpc_pipefs rpc_pipefs /var/lib/nfs/rpc_pipefs
+			eend $?
+		fi
+	fi
+}
+
+umount_pipefs() {
+	[ "${restarting}" = "yes" -o "${RC_CMD}" = "restart" ] && return 0
+	if grep -qs "rpc_pipefs /var/lib/nfs/rpc_pipefs" /proc/mounts ; then
+		ebegin "Unmounting RPC pipefs"
+		umount /var/lib/nfs/rpc_pipefs
+		eend $?
+	fi
+}
+
+mount_nfsd() {
+	# Make sure nfs support is loaded in the kernel #64709
+	if [ -e /proc/modules ] && ! grep -qs nfsd /proc/filesystems ; then
+		modprobe nfsd &> /dev/null
+	fi
+
+	# This is the new "kernel 2.6 way" to handle the exports file
+	if grep -qs nfsd /proc/filesystems ; then
+		if ! grep -qs "nfsd /proc/fs/nfs" /proc/mounts ; then
+			ebegin "Mounting nfsd filesystem in /proc"
+			mount -t nfsd -o nodev,noexec,nosuid nfsd /proc/fs/nfs
+			eend $?
+		fi
+	fi
+}
+
+start() {
+	mount_nfsd
+	mount_pipefs
+
+	ebegin "Starting idmapd"
+	${rpc_bin} ${OPTS_RPC_IDMAPD}
+	eend $?
+}
+
+stop() {
+	local ret
+
+	ebegin "Stopping idmapd"
+	start-stop-daemon --stop --quiet --exec ${rpc_bin}
+	ret=$?
+	eend ${ret}
+
+	umount_pipefs
+
+	return ${ret}
+}
+
+restart() {
+	restarting="yes"
+	svc_stop
+	svc_start
+}

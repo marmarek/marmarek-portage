@@ -1,0 +1,129 @@
+Dodaje mo¿liow¶æ czytania z cache p0fa przez socket (p0f -Q socket).
+Sposób u¿ycia:
+
+$os_fingerprint_method = p0fcache:socket
+
+UWAGA!!!! Trzeba wpisaæ IP serwera w linii:
+    my $dst = new Net::IP ("85.232.234.98") or die(Net::IP::Error());
+*** amavisd.pre-p0fcache	Thu May 17 17:44:54 2007
+--- amavisd	Thu May 17 19:53:03 2007
+***************
+*** 10943,10949 ****
+    else {
+      # deal with it in the next section
+    }
+!   if (!$needed_protocols_out{'P0F'}) { undef $extra_code_p0f }
+    else {
+      eval $extra_code_p0f or die "Problem in OS_Fingerprint code: $@";
+      $extra_code_p0f = 1;        # release memory occupied by the source code
+--- 10943,10949 ----
+    else {
+      # deal with it in the next section
+    }
+!   if (!$needed_protocols_out{'P0F'} and !$needed_protocols_out{'P0FCACHE'}) { undef $extra_code_p0f }
+    else {
+      eval $extra_code_p0f or die "Problem in OS_Fingerprint code: $@";
+      $extra_code_p0f = 1;        # release memory occupied by the source code
+***************
+*** 15421,15443 ****
+  
+  sub new {
+    my($class, $hostport,$timeout,$query,$nonce) = @_;
+    local($1,$2,$3);
+!   $hostport =~ /^(?: p0f: )? (?: \[ ([^\]]*) \] | ([^:]*) ) : ([^:]*) /six
+!     or die "Bad p0f method syntax: $hostport";
+!   my($host,$port) = ($1.$2, $3);  my($sock);
+!   do_log(4,"Fingerprint query: %s port=%s %s %s", $host,$port,$query,$nonce);
+!   $sock = IO::Socket::INET->new(Type=>SOCK_DGRAM, Proto=>'udp')
+!     or die "Can't create INET socket: $!";
+!   my($hisiaddr) = inet_aton($host)  or die "Fingerprint - unknown host: $host";
+!   my($hispaddr) = scalar(sockaddr_in($port, $hisiaddr));
+!   defined($sock->send("$query $nonce", 0, $hispaddr))
+!     or die "Fingerprint - send: $!";
+!   bless { sock=>$sock, wait_until=>(Time::HiRes::time + $timeout),
+!           query=>$query, nonce=>$nonce }, $class;
+  }
+  
+  sub collect_response {
+    my($self) = @_;
+    my($timeout) = $self->{wait_until} - Time::HiRes::time;
+    if ($timeout < 0) { $timeout = 0 };
+    my($sock) = $self->{sock};
+--- 15421,15497 ----
+  
+  sub new {
+    my($class, $hostport,$timeout,$query,$nonce) = @_;
++   my $resp="";
+    local($1,$2,$3);
+!   if ($hostport =~ /^(?: p0f: )? (?: \[ ([^\]]*) \] | ([^:]*) ) : ([^:]*) $/six) {
+!     my($host,$port) = ($1.$2, $3);  my($sock);
+!     do_log(4,"Fingerprint query: %s port=%s %s %s", $host,$port,$query,$nonce);
+!     $sock = IO::Socket::INET->new(Type=>SOCK_DGRAM, Proto=>'udp')
+!       or die "Can't create INET socket: $!";
+!     my($hisiaddr) = inet_aton($host)  or die "Fingerprint - unknown host: $host";
+!     my($hispaddr) = scalar(sockaddr_in($port, $hisiaddr));
+!     defined($sock->send("$query $nonce", 0, $hispaddr))
+!       or die "Fingerprint - send: $!";
+!     bless { sock=>$sock, wait_until=>(Time::HiRes::time + $timeout),
+!       query=>$query, nonce=>$nonce }, $class;
+!   } elsif ($hostport =~ /^p0fcache: (.*):(.*)$/six) {
+!     my ($myip,$p0f_socket)=($1,$2);
+!     do_log(4,"p0f-socket: $1");
+!     my $QUERY_MAGIC = 0x0defaced;
+!     my $QTYPE_FINGERPRINT = 1;
+!     if ($query =~ m/^IPv6/) {
+! 	do_log(4,"Fingerprint - IPv6 not supported");
+! 	$resp="";
+! 	bless { query=>$query, resp=>$resp }, $class;
+! 	return;
+!     }
+!     my $src = new Net::IP ($query) or die(Net::IP::Error());
+!     #
+!     # This is TODO -> how to get all interfaces MTA listens on?
+!     #
+!     my $dst = new Net::IP ($myip) or die(Net::IP::Error());
+!     my $query_str = pack("L L L N N S S", $QUERY_MAGIC, $QTYPE_FINGERPRINT, 0x12345678, $src->intip(), $dst->intip(), 0, 25);
+!     my $sock = new IO::Socket::UNIX (Peer => $p0f_socket, Type => SOCK_STREAM);
+! 
+!     if (!$sock) {
+!       die("Could not create p0f socket: $!");
+!     }
+! 
+!     # Ask p0f
+!     print $sock $query_str;
+!     my $response = <$sock>;
+!     close $sock;
+! 
+!     # Extract the response from p0f
+!     my ($magic, $id, $type, $genre, $detail, $dist, $link, $tos, $fw, $nat, $real, $score, $mflags, $uptime) = 
+!     	unpack ("L L C Z20 Z40 c Z30 Z30 C C C s S N", $response);
+!     if ($magic != $QUERY_MAGIC) {
+!       die("bad p0f query magic");
+!     }
+!     if ($type == 1) {
+!       die("malformed p0f query");
+!     } elsif ($type == 2) {
+!       do_log(4,"connection from $query is not (no longer?) in p0f cache");
+!       $resp="";
+!     } else {
+!       if ($genre eq "") {
+! 	$genre = "unknown";
+!       }
+!       $resp="$genre $detail, distance $dist, link $link, tos $tos, fw $fw, nat $nat, uptime $uptime";
+!     }
+! 
+!     bless { query=>$query, resp=>$resp }, $class;
+! 
+!   } else { die "Bad p0f method syntax: $hostport"; }
+  }
+  
+  sub collect_response {
+    my($self) = @_;
++   if (defined($self->{resp})) {
++     do_log(4,"Fingerprint collect: %.35s... => %s",
++              $self->{query},$self->{resp});
++     return $self->{resp};
++   }
+    my($timeout) = $self->{wait_until} - Time::HiRes::time;
+    if ($timeout < 0) { $timeout = 0 };
+    my($sock) = $self->{sock};

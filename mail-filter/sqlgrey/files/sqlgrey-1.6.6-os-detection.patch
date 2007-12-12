@@ -1,0 +1,115 @@
+*** sqlgrey.org	Tue Sep 19 09:48:20 2006
+--- sqlgrey	Tue Sep 19 12:41:24 2006
+***************
+*** 30,35 ****
+--- 30,39 ----
+  use Net::Server::Multiplex;
+  use DBI;
+  use POSIX ':sys_wait_h';
++ use Fcntl;
++ use Sys::Syslog qw(:DEFAULT setlogsock);
++ use IO::Socket;
++ use Net::IP;
+  
+  use vars qw(@ISA);
+  @ISA = qw(Net::Server::Multiplex);
+***************
+*** 86,93 ****
+--- 90,100 ----
+  	      'perf' => 2,
+  	      'system' => 2,
+  	      'conf' => 2,
++ 	      'p0f' => 2,
+  	      'other' => 2,
+  	     };
++ $dflt{p0f_socket}="/var/mta/p0f-socket";
++ 
+  
+  # Default configuration file
+  my $config_file              = '/etc/sqlgrey/sqlgrey.conf';
+***************
+*** 1915,1920 ****
+--- 1922,1971 ----
+      }
+  }
+  
++ sub p0f_query {
++     my $QUERY_MAGIC = 0x0defaced;
++     my $QTYPE_FINGERPRINT = 1;
++     my ($self, $src_ip) = @_;
++     my $src = new Net::IP ($src_ip) or $self->mylog('p0f', 3, Net::IP::Error()), return "unknown";
++     #
++     # This is TODO -> how to get all interfaces MTA listens on?
++     #
++     my $dst = new Net::IP ("195.205.163.66") or $self->mylog('p0f', 3, Net::IP::Error()), return "unknown";
++     my $query = pack("L L L N N S S", $QUERY_MAGIC, $QTYPE_FINGERPRINT, 0x12345678, $src->intip(), $dst->intip(), 0, 25);
++     my $sock = new IO::Socket::UNIX (Peer => $self->{sqlgrey}{p0f_socket}, Type => SOCK_STREAM);
++   
++     if (!$sock) {
++         $self->mylog('p0f', 3, "Could not create p0f socket: $!");
++ 	return "unknown";
++     }
++     
++     # Ask p0f
++     print $sock $query;
++     my $response = <$sock>;
++     close $sock;
++ 
++     # Extract the response from p0f
++     my ($magic, $id, $type, $genre, $detail, $dist, $link, $tos, $fw, $nat, $real, $score, $mflags, $uptime) =
++         unpack ("L L C Z20 Z40 c Z30 Z30 C C C s S N", $response);
++     if ($magic != $QUERY_MAGIC) {
++         $self->mylog('p0f', 3, "bad p0f query magic");
++ 	return "unknown";
++     } 
++     if ($type == 1) {
++         $self->mylog('p0f', 3, "malformed p0f query");
++         return "unknown";
++     }
++     if ($type == 2) {
++         $self->mylog('p0f', 3, "connection from $src_ip is not (no longer?) in the p0f cache");
++ 	return "unknown";
++     }
++     if ($genre eq "") {
++         $genre = "unknown";
++     } 
++     $self->mylog('p0f', 3, "OS detected: $genre");
++     return $genre;
++ }
++ 
+  # main routine:
+  # based on attributes specified as argument, return policy decision
+  sub smtpd_access_policy($$)
+***************
+*** 1928,1933 ****
+--- 1979,1998 ----
+      my $addr = $attr->{client_address};
+      my $fqdn = $attr->{client_name};
+  
++     my $genre = $self->p0f_query($addr);
++     
++     # Here the OS we want to graylist 
++     if ($genre ne "Windows") {
++         if ($genre eq "unknown") {
++ 	    $self->mylog('p0f', 2, "OS unknown on $addr: not graylisting");
++ 	} else {
++             $self->mylog('p0f', 3, "$genre OS detected on $addr: not graylisting");
++ 	}
++         return $self->{sqlgrey}{prepend} ?
++ 	    $prepend . 'not graylisting OS ' . $genre
++ 		: 'dunno';
++     }
++ 
+      # Check for new whitelists
+      $self->update_dyn_whitelists();
+      # Check if we got the reload signal.
+***************
+*** 2209,2214 ****
+--- 2274,2280 ----
+  	    mail_period     => 10, # one mail each 10 minutes max
+  	    mail_bucket     => 5, # initial bucket
+  	    last_mail       => time,
++ 	    p0f_socket      => $dflt{p0f_socket},
+  	    log             => $dflt{log},
+          },
+      }, 'sqlgrey';

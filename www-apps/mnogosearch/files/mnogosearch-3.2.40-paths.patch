@@ -1,0 +1,314 @@
+diff -rc mnogosearch-3.2.40/create/mssql/Makefile.am mnogosearch-3.2.40.new/create/mssql/Makefile.am
+*** mnogosearch-3.2.40/create/mssql/Makefile.am	Fri Feb 17 06:05:47 2006
+--- mnogosearch-3.2.40.new/create/mssql/Makefile.am	Thu Nov 23 09:12:40 2006
+***************
+*** 30,39 ****
+  
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/mssql
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/mssql/ ; \
+  	done
+  
+  uninstall-local:
+--- 30,39 ----
+  
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/mssql
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/mssql/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/ibase/Makefile.am mnogosearch-3.2.40.new/create/ibase/Makefile.am
+*** mnogosearch-3.2.40/create/ibase/Makefile.am	Fri Feb 17 06:05:47 2006
+--- mnogosearch-3.2.40.new/create/ibase/Makefile.am	Thu Nov 23 09:12:40 2006
+***************
+*** 30,39 ****
+  
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/ibase
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/ibase/ ; \
+  	done
+  
+  uninstall-local:
+--- 30,39 ----
+  
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/ibase
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/ibase/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/mimer/Makefile.am mnogosearch-3.2.40.new/create/mimer/Makefile.am
+*** mnogosearch-3.2.40/create/mimer/Makefile.am	Sun Jan 29 18:23:55 2006
+--- mnogosearch-3.2.40.new/create/mimer/Makefile.am	Thu Nov 23 09:13:53 2006
+***************
+*** 59,68 ****
+  
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/mimer
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/mimer/ ; \
+  	done
+  
+  uninstall-local:
+--- 59,68 ----
+  
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/mimer
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/mimer/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/mysql/Makefile.am mnogosearch-3.2.40.new/create/mysql/Makefile.am
+*** mnogosearch-3.2.40/create/mysql/Makefile.am	Fri Sep 16 15:54:06 2005
+--- mnogosearch-3.2.40.new/create/mysql/Makefile.am	Thu Nov 23 09:14:01 2006
+***************
+*** 51,60 ****
+    drop.blob.sql
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/mysql
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/mysql/ ; \
+  	done
+  
+  uninstall-local:
+--- 51,60 ----
+    drop.blob.sql
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/mysql
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/mysql/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/oracle/Makefile.am mnogosearch-3.2.40.new/create/oracle/Makefile.am
+*** mnogosearch-3.2.40/create/oracle/Makefile.am	Fri Feb 17 08:48:26 2006
+--- mnogosearch-3.2.40.new/create/oracle/Makefile.am	Thu Nov 23 09:14:11 2006
+***************
+*** 32,41 ****
+  
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/$(DBDIR)
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/$(DBDIR)/ ; \
+  	done
+  
+  uninstall-local:
+--- 32,41 ----
+  
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/$(DBDIR)
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/$(DBDIR)/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/pgsql/Makefile.am mnogosearch-3.2.40.new/create/pgsql/Makefile.am
+*** mnogosearch-3.2.40/create/pgsql/Makefile.am	Fri Feb 17 08:57:09 2006
+--- mnogosearch-3.2.40.new/create/pgsql/Makefile.am	Thu Nov 23 09:14:19 2006
+***************
+*** 58,67 ****
+    drop.single.sql
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/pgsql
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/pgsql/ ; \
+  	done
+  
+  uninstall-local:
+--- 58,67 ----
+    drop.single.sql
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/pgsql
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/pgsql/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/sqlite/Makefile.am mnogosearch-3.2.40.new/create/sqlite/Makefile.am
+*** mnogosearch-3.2.40/create/sqlite/Makefile.am	Thu Aug 12 18:51:50 2004
+--- mnogosearch-3.2.40.new/create/sqlite/Makefile.am	Thu Nov 23 09:14:35 2006
+***************
+*** 48,57 ****
+    drop.multi.sql
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/sqlite
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/sqlite/ ; \
+  	done
+  
+  uninstall-local:
+--- 48,57 ----
+    drop.multi.sql
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/sqlite
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/sqlite/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/sybase/Makefile.am mnogosearch-3.2.40.new/create/sybase/Makefile.am
+*** mnogosearch-3.2.40/create/sybase/Makefile.am	Sun Jan 29 18:00:09 2006
+--- mnogosearch-3.2.40.new/create/sybase/Makefile.am	Thu Nov 23 09:14:44 2006
+***************
+*** 39,48 ****
+    drop.blob.sql
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/sybase
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/sybase/ ; \
+  	done
+  
+  uninstall-local:
+--- 39,48 ----
+    drop.blob.sql
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/sybase
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/sybase/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/cache/Makefile.am mnogosearch-3.2.40.new/create/cache/Makefile.am
+*** mnogosearch-3.2.40/create/cache/Makefile.am	Fri Apr 16 09:59:19 2004
+--- mnogosearch-3.2.40.new/create/cache/Makefile.am	Thu Nov 23 09:14:53 2006
+***************
+*** 27,36 ****
+  dbdir=cache
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/$(dbdir)
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/$(dbdir)/ ; \
+  	done
+  
+  uninstall-local:
+--- 27,36 ----
+  dbdir=cache
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/$(dbdir)
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/$(dbdir)/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/db2/Makefile.am mnogosearch-3.2.40.new/create/db2/Makefile.am
+*** mnogosearch-3.2.40/create/db2/Makefile.am	Fri Apr 16 09:59:19 2004
+--- mnogosearch-3.2.40.new/create/db2/Makefile.am	Thu Nov 23 09:14:53 2006
+***************
+*** 27,36 ****
+  dbdir=db2
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/$(dbdir)
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/$(dbdir)/ ; \
+  	done
+  
+  uninstall-local:
+--- 27,36 ----
+  dbdir=db2
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/$(dbdir)
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/$(dbdir)/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/create/virtuoso/Makefile.am mnogosearch-3.2.40.new/create/virtuoso/Makefile.am
+*** mnogosearch-3.2.40/create/virtuoso/Makefile.am	Fri Apr 16 09:59:19 2004
+--- mnogosearch-3.2.40.new/create/virtuoso/Makefile.am	Thu Nov 23 09:14:53 2006
+***************
+*** 27,36 ****
+  dbdir=virtuoso
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/$(dbdir)
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/$(dbdir)/ ; \
+  	done
+  
+  uninstall-local:
+--- 27,36 ----
+  dbdir=virtuoso
+  
+  install-data-local: $(sql_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/${PACKAGE}/$(dbdir)
+  	list='${sql_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} ./$$p $(DESTDIR)$(datadir)/${PACKAGE}/$(dbdir)/ ; \
+  	done
+  
+  uninstall-local:
+diff -rc mnogosearch-3.2.40/doc/Makefile.am mnogosearch-3.2.40.new/doc/Makefile.am
+*** mnogosearch-3.2.40/doc/Makefile.am	Tue Apr 11 12:39:23 2006
+--- mnogosearch-3.2.40.new/doc/Makefile.am	Thu Nov 23 09:03:06 2006
+***************
+*** 250,260 ****
+  
+  
+  install-data-local: $(doc_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(prefix)/doc
+! 	echo ${INSTALL_DATA} docs $(DESTDIR)$(prefix)/doc/
+  	list='${doc_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} $(srcdir)/$$p $(DESTDIR)$(prefix)/doc/ ; \
+  	done
+  
+  uninstall-local:
+--- 250,260 ----
+  
+  
+  install-data-local: $(doc_FILES)
+! 	$(mkinstalldirs) $(DESTDIR)$(datadir)/doc/${PACKAGE}-${VERSION}
+! 	echo ${INSTALL_DATA} docs $(DESTDIR)$(datadir)/doc/${PACKAGE}-${VERSION}
+  	list='${doc_FILES}'; \
+  	for p in $$list; do \
+! 		${INSTALL_DATA} $(srcdir)/$$p $(DESTDIR)$(datadir)/doc/${PACKAGE}-${VERSION} ; \
+  	done
+  
+  uninstall-local:

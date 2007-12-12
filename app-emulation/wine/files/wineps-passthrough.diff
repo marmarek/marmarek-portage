@@ -1,0 +1,40 @@
+diff -rc wine-0.9.20/dlls/wineps.drv/graphics.c wine-0.9.20-/dlls/wineps.drv/graphics.c
+*** wine-0.9.20/dlls/wineps.drv/graphics.c      2006-08-24 16:11:45.000000000 +0200
+--- wine-0.9.20-/dlls/wineps.drv/graphics.c     2006-09-10 20:14:26.000000000 +0200
+***************
+*** 127,133 ****
+      /* Windows does something truly hacky here.  If we're in passthrough mode
+         and our rop is R2_NOP, then we output the string below.  This is used in
+         Office 2k when inserting eps files */
+!     if(physDev->job.in_passthrough && !physDev->job.had_passthrough_rect && GetROP2(physDev->hdc) == R2_NOP) {
+        char buf[256];
+        sprintf(buf, "N %ld %ld %ld %ld B\n", rect.right - rect.left, rect.bottom - rect.top, rect.left, rect.top);
+        WriteSpool16(physDev->job.hJob, buf, strlen(buf));
+--- 127,133 ----
+      /* Windows does something truly hacky here.  If we're in passthrough mode
+         and our rop is R2_NOP, then we output the string below.  This is used in
+         Office 2k when inserting eps files */
+!     if((physDev->job.in_passthrough || true ) && !physDev->job.had_passthrough_rect && GetROP2(physDev->hdc) == R2_NOP) {
+        char buf[256];
+        sprintf(buf, "N %ld %ld %ld %ld B\n", rect.right - rect.left, rect.bottom - rect.top, rect.left, rect.top);
+        WriteSpool16(physDev->job.hJob, buf, strlen(buf));
+diff -rc wine-0.9.20/dlls/wineps.drv/ps.c wine-0.9.20-/dlls/wineps.drv/ps.c
+*** wine-0.9.20/dlls/wineps.drv/ps.c    2006-08-24 16:11:45.000000000 +0200
+--- wine-0.9.20-/dlls/wineps.drv/ps.c   2006-09-10 20:13:44.000000000 +0200
+***************
+*** 209,215 ****
+        return 0;
+      }
+
+!     if(physDev->job.in_passthrough) { /* Was in PASSTHROUGH mode */
+          WriteSpool16( physDev->job.hJob, (LPSTR)psenddocument, sizeof(psenddocument)-1 );
+          physDev->job.in_passthrough = physDev->job.had_passthrough_rect = FALSE;
+      }
+--- 209,215 ----
+        return 0;
+      }
+
+!     if(physDev->job.in_passthrough || true) { /* Was in PASSTHROUGH mode */
+          WriteSpool16( physDev->job.hJob, (LPSTR)psenddocument, sizeof(psenddocument)-1 );
+          physDev->job.in_passthrough = physDev->job.had_passthrough_rect = FALSE;
+      }

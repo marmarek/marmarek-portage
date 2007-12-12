@@ -1,0 +1,36 @@
+*** snmp_common.c	Mon Mar 29 16:03:07 2004
+--- snmp_common.c.new	Sun Oct  1 00:42:23 2006
+***************
+*** 229,235 ****
+  
+  void integer_callback(struct variable_list *vars, void **pnt)
+  {
+!   long *data = ((long *)(*pnt))++;
+  
+    if(verbose)
+      printf("%s: Found Integer Value %ld into %lx\n", bn, *vars->val.integer, data);
+--- 229,235 ----
+  
+  void integer_callback(struct variable_list *vars, void **pnt)
+  {
+!   long *data = ((long *)(*pnt))+1;
+  
+    if(verbose)
+      printf("%s: Found Integer Value %ld into %lx\n", bn, *vars->val.integer, data);
+***************
+*** 245,251 ****
+  
+  void string_callback(struct variable_list *vars, void **pnt)
+  {
+!   char **data = ((char **)(*pnt))++;
+    
+    if(verbose)
+      printf("%s: Putting String into %lx\n", bn, data);
+--- 245,251 ----
+  
+  void string_callback(struct variable_list *vars, void **pnt)
+  {
+!   char **data = ((char **)(*pnt))+1;
+    
+    if(verbose)
+      printf("%s: Putting String into %lx\n", bn, data);

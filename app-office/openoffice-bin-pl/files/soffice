@@ -1,0 +1,10 @@
+# Dla Gentoo Linux 2004 - seba.sledz@interia.pl
+#!/bin/sh
+OO_DIR="OpenOffice.org1.1.2"
+
+if [ -d ~/$OO_DIR ]
+then
+    ~/${OO_DIR}/soffice
+else
+    /opt/${OO_DIR}/setup
+fi

@@ -1,0 +1,16 @@
+# ChangeLog for app-office/openoffice-bin-pl
+
+*openoffice-bin-pl-1.1.2-r1 (26 July 2004) openoffice-bin-pl-1.1.2-r1.ebuild:
+
+    26 July 2004; S.S.	<seba.sledz@interia.pl>	:
+    
+    Nowa wersja. I mam w d####, to ¿e powinno byæ napisane to po angielsku :P.
+    
+*openoffice-bin-pl-1.1.0-r4 (8 Jan 2004) openoffice-bin-pl-1.1.0-r4.ebuild :
+    
+    8 Jan 2004; K.G.	<kolodko1@wp.pl>  :   
+
+
+    Added initial ChangeLog which should be updated whenever the package is
+    updated in any way. This changelog is targetted to users. This means that the
+    comments should well explained and written in clean English. 

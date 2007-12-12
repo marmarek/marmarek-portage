@@ -1,0 +1,38 @@
+--- partimage-0.6.6.orig/Makefile.am	2006-04-22 16:59:22.000000000 +0200
++++ partimage-0.6.6/Makefile.am.chown	2007-10-23 00:34:32.000000000 +0200
+@@ -23,8 +23,6 @@
+ 	rm ${sysconfdir}/partimaged/partimaged.csr ;\
+ 	chmod 600 ${sysconfdir}/partimaged/partimaged.key ;\
+ 	chmod 600 ${sysconfdir}/partimaged/partimaged.cert ;\
+-	chown partimag:root ${sysconfdir}/partimaged/partimaged.key ;\
+-	chown partimag:root ${sysconfdir}/partimaged/partimaged.cert ;\
+ 	else \
+ 	echo "SSL disabled, no certificate will be generated." ;\
+ 	fi
+@@ -57,7 +55,6 @@
+ 	echo "#sample # user 'sample' is allowed to connect partimaged" >> \
+            ${sysconfdir}/partimaged/partimagedusers ;\
+ 	chmod 600 ${sysconfdir}/partimaged/partimagedusers ;\
+-	chown partimag:root ${sysconfdir}/partimaged/partimagedusers ;\
+ 	fi 
+ 
+ 	$(mkinstalldirs) ${infodir}
+--- partimage-0.6.6.orig/Makefile.in	2007-10-23 00:30:25.000000000 +0200
++++ partimage-0.6.6/Makefile.in.chown	2007-10-23 00:32:49.000000000 +0200
+@@ -670,8 +670,6 @@
+ 	rm ${sysconfdir}/partimaged/partimaged.csr ;\
+ 	chmod 600 ${sysconfdir}/partimaged/partimaged.key ;\
+ 	chmod 600 ${sysconfdir}/partimaged/partimaged.cert ;\
+-	chown partimag:root ${sysconfdir}/partimaged/partimaged.key ;\
+-	chown partimag:root ${sysconfdir}/partimaged/partimaged.cert ;\
+ 	else \
+ 	echo "SSL disabled, no certificate will be generated." ;\
+ 	fi
+@@ -703,7 +701,6 @@
+ 	echo "#sample # user 'sample' is allowed to connect partimaged" >> \
+            ${sysconfdir}/partimaged/partimagedusers ;\
+ 	chmod 600 ${sysconfdir}/partimaged/partimagedusers ;\
+-	chown partimag:root ${sysconfdir}/partimaged/partimagedusers ;\
+ 	fi 
+ 
+ 	#$(mkinstalldirs) ${infodir}

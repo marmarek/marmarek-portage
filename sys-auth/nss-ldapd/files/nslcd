@@ -1,0 +1,26 @@
+#!/sbin/runscript
+# Copyright 1999-2007 Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+# $Header: $
+
+depend() {
+	after net
+	after stunnel
+}
+
+start() {
+	ebegin "Starting NSS-LDAP daemon"
+	start-stop-daemon --start --pidfile /var/run/nslcd/nslcd.pid --exec /usr/sbin/nslcd 
+	eend $?
+}
+
+stop() {
+	ebegin "Stoping NSS-LDAP daemon"
+	start-stop-daemon --stop --pidfile /var/run/nslcd/nslcd.pid --exec /usr/sbin/nslcd 
+	eend $?
+}
+
+restart() {
+	svc_stop
+	svc_start
+}

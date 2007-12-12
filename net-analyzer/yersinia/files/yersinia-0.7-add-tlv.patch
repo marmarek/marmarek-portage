@@ -1,0 +1,801 @@
+diff -rc yersinia-0.7/src/cdp.c yersinia-0.7.new/src/cdp.c
+*** yersinia-0.7/src/cdp.c	2006-06-18 17:23:33.000000000 +0200
+--- yersinia-0.7.new/src/cdp.c	2006-11-12 23:06:36.000000000 +0100
+***************
+*** 756,762 ****
+  		break;
+  	}
+  
+!     return -1;
+  }
+  
+  
+--- 756,762 ----
+  		break;
+  	}
+  
+!     return 0;
+  }
+  
+  
+diff -rc yersinia-0.7/src/commands.c yersinia-0.7.new/src/commands.c
+*** yersinia-0.7/src/commands.c	2006-06-18 17:23:15.000000000 +0200
+--- yersinia-0.7.new/src/commands.c	2006-11-12 23:13:03.000000000 +0100
+***************
+*** 115,120 ****
+--- 115,122 ----
+     struct commands_param *prot_comms;
+     struct term_vty *vty = node->specific;
+  
++     if (node->state==EXTRA_STATE)
++         prot=node->proto;
+     last_proto = prot;
+     par_comm = 0;
+     if (warray->word[warray->indx])
+***************
+*** 180,187 ****
+                    {
+                       if (aux_comm[j].proto == LIST_PARAM)
+                       {
+!                         prot_comms = protocols[proto].parameters;
+!                         fail = term_vty_tab_subst(node, warray->word[warray->indx], prot_comms[par_comm].desc);
+                       }
+                       else
+                       if (aux_comm[j].proto == ANY_PROTO)
+--- 182,193 ----
+                    {
+                       if (aux_comm[j].proto == LIST_PARAM)
+                       {
+!                          if (node->state==EXTRA_STATE) {
+!                              fail = term_vty_tab_subst(node, warray->word[warray->indx], protocols[proto].extra_parameters[par_comm].desc);
+!                          } else {
+!                              prot_comms = protocols[proto].parameters;
+!                              fail = term_vty_tab_subst(node, warray->word[warray->indx], prot_comms[par_comm].desc);
+!                          }
+                       }
+                       else
+                       if (aux_comm[j].proto == ANY_PROTO)
+***************
+*** 278,283 ****
+--- 284,292 ----
+     struct commands_param *prot_comms;
+     struct commands_param_extra *extra_comms;
+  
++    if (node->state==EXTRA_STATE) {
++ 	   proto=node->proto;
++    }
+     i = 0;
+     
+     while(aux_comm[i].help != NULL)
+***************
+*** 301,327 ****
+            {
+                if (aux_comm[i].proto == LIST_PARAM)
+                {
+!                  prot_comms = protocols[proto].parameters;
+!                  for(j=0; j<protocols[proto].nparams; j++)
+!                  {
+!                     snprintf(msg,sizeof(msg),"  %-10s %-30s\r\n",
+                                    prot_comms[protocols[proto].params_sort[j]].desc,
+                                    prot_comms[protocols[proto].params_sort[j]].help);
+!                     if (term_vty_write(node,msg,strlen(msg)) < 0)
+!                        return -1;
+!                  }
+! 
+                   /* Are there any other parameters? */
+                   if ((extra_comms = protocols[proto].extra_parameters) != NULL) {
+!                     snprintf(msg, sizeof(msg), "\r\n  %s extra parameters\r\n\r\n", protocols[proto].namep);
+!                     if (term_vty_write(node,msg,strlen(msg)) < 0)
+!                        return -1;
+!                     for(j=0; j<protocols[proto].extra_nparams; j++)
+!                     {
+!                        snprintf(msg, sizeof(msg), "  %-10s %-30s\r\n", extra_comms[j].desc, extra_comms[j].help);
+!                        if (term_vty_write(node, msg, strlen(msg)) < 0)
+!                           return -1;
+!                     }
+                   }
+                }
+                else
+--- 310,339 ----
+            {
+                if (aux_comm[i].proto == LIST_PARAM)
+                {
+!                   if (node->state != EXTRA_STATE) {
+!                       prot_comms = protocols[proto].parameters;
+!                       for(j=0; j<protocols[proto].nparams; j++)
+!                       {
+!                           snprintf(msg,sizeof(msg),"  %-10s %-30s\r\n",
+                                    prot_comms[protocols[proto].params_sort[j]].desc,
+                                    prot_comms[protocols[proto].params_sort[j]].help);
+!                           if (term_vty_write(node,msg,strlen(msg)) < 0)
+!                               return -1;
+!                       }
+!                   }
+                   /* Are there any other parameters? */
+                   if ((extra_comms = protocols[proto].extra_parameters) != NULL) {
+!                      if (node->state != EXTRA_STATE) {
+!                          snprintf(msg, sizeof(msg), "\r\n  %s extra parameters\r\n\r\n", protocols[proto].namep);
+!                          if (term_vty_write(node,msg,strlen(msg)) < 0)
+!                              return -1;
+!                      }
+!                      for(j=0; j<protocols[proto].extra_nparams; j++)
+!                      {
+!                          snprintf(msg, sizeof(msg), "  %-10s %-30s\r\n", extra_comms[j].desc, extra_comms[j].help);
+!                          if (term_vty_write(node, msg, strlen(msg)) < 0)
+!                              return -1;
+!                      }
+                   }
+                }
+                else
+***************
+*** 346,351 ****
+--- 358,364 ----
+     char msg[128];
+     u_int8_t i, k, go_out;
+     struct commands_param *prot_comms;
++    struct commands_param_extra *prot_comms_ex;
+  
+     i = 0;
+  
+***************
+*** 409,414 ****
+--- 422,428 ----
+            else /* Verify the word against the protocol params list */
+            {
+               go_out = 0;
++              if (node->state!=EXTRA_STATE) {
+               prot_comms = protocols[*proto].parameters;
+               for(k=0; k<protocols[*proto].nparams;k++)
+               {
+***************
+*** 436,448 ****
+                      (*gotit)++;
+                   }
+               }
+               if (go_out)
+                  break;
+            }
+        }
+        i++;
+     }
+- 
+     return 0;
+  }
+  
+--- 450,493 ----
+                      (*gotit)++;
+                   }
+               }
++              } else {
++              
++              prot_comms_ex = protocols[*proto].extra_parameters;
++              for(k=0; k<protocols[*proto].extra_nparams;k++)
++              {
++ 
++                  if (!strncmp(prot_comms_ex[protocols[*proto].extra_params_sort[k]].desc, word, strlen(word)))
++                  {
++                     *param = protocols[*proto].extra_params_sort[k];                 
++                     if (print)
++                     { 
++                        snprintf(msg,sizeof(msg),"  %-10s %-30s\r\n",
++                                   prot_comms_ex[protocols[*proto].extra_params_sort[k]].desc,
++                                   prot_comms_ex[protocols[*proto].extra_params_sort[k]].help);
++                        if (term_vty_write(node,msg,strlen(msg))<0)
++                           return -1;
++                     }
++                     if (strlen(word) == strlen(prot_comms_ex[protocols[*proto].extra_params_sort[k]].desc))
++                     {
++                        (*gotit)++;
++                        *j=i;
++                        *param = protocols[*proto].extra_params_sort[k];
++                        go_out = 1;
++                        break;
++                     }
++                     if (!(*j)) *j=i;
++                     (*gotit)++;
++                  }
++              }
++              
++              }
++ 
+               if (go_out)
+                  break;
+            }
+        }
+        i++;
+     }
+     return 0;
+  }
+  
+***************
+*** 1639,1644 ****
+--- 1684,1711 ----
+          /* Ok, now we can set the protocol defaults...*/
+          fail = (*protocols[proto].init_attribs)(node);
+      }
++     else if (prot_comms[x].type == FIELD_EXTRA) {
++         if (warray->word[warray->indx])
++         {
++             if (help || tab)
++                snprintf(msg,sizeof(msg),"%% Too many arguments\r\n");
++             else
++                snprintf(msg,sizeof(msg),"\r\n%% Too many arguments");
++             fail = term_vty_write(node,msg, strlen(msg));
++             return fail;
++         }
++         
++         if (help || tab)
++         {
++            snprintf(msg,sizeof(msg),"   <cr>\r\n");
++            fail = term_vty_write(node,msg,strlen(msg));
++            return fail;
++         }
++ 	
++ 	fail = 0;
++ 	node->state = EXTRA_STATE;
++ 	node->proto = proto;
++     }
+      else
+      {
+          if (!warray->word[warray->indx]) /* No data...*/
+***************
+*** 1726,1731 ****
+--- 1793,1925 ----
+      return fail;   
+  }
+  
++ /*
++  * Entry point for extra comms  
++  */
++ int8_t
++ command_set_extra(struct term_node *node, struct words_array *warray, 
++                   int16_t x, int8_t help, int8_t as_param, u_int8_t proto,
++                   struct commands *aux_comm, int8_t tab)
++ {
++     char msg[128];
++     int8_t fail;
++ /*    u_int32_t aux_long;*/
++     struct term_vty *vty = node->specific;
++     struct commands_param_extra *prot_comms;
++     dlist_t *p;
++     struct interface_data *iface_data, *interface_new;
++     u_int8_t *tmp_val;
++ 
++     prot_comms = protocols[node->proto].extra_parameters;
++ 
++     if (prot_comms[x].type == FIELD_DEFAULT) 
++     {
++         if (warray->word[warray->indx])
++         {
++             if (help || tab)
++                snprintf(msg,sizeof(msg),"%% Too many arguments\r\n");
++             else
++                snprintf(msg,sizeof(msg),"\r\n%% Too many arguments");
++             fail = term_vty_write(node,msg, strlen(msg));
++             return fail;
++         }
++         
++         if (help || tab)
++         {
++            snprintf(msg,sizeof(msg),"   <cr>\r\n");
++            fail = term_vty_write(node,msg,strlen(msg));
++            return fail;
++         }
++ 
++         /* Ok, now we can set the protocol defaults...*/
++         fail = (*protocols[node->proto].init_attribs)(node);
++     }
++     else
++     {
++         if (!warray->word[warray->indx]) /* No data...*/
++         {
++             if (!help && !tab)
++             {
++                snprintf(msg,sizeof(msg),"\r\n%% Incomplete command.");
++                fail = term_vty_write(node,msg, strlen(msg));
++                return fail;
++             }
++             snprintf(msg,sizeof(msg),"  %-30s\r\n",prot_comms[x].param);
++             fail = term_vty_write(node,msg,strlen(msg));
++             if (fail == -1)
++                return -1;
++             snprintf(msg,sizeof(msg),"   <cr>\r\n");
++             fail = term_vty_write(node,msg,strlen(msg));
++             return fail;
++          }
++ 
++          if (warray->nwords > (warray->indx+1))
++          {
++              if (help || tab)
++                 snprintf(msg,sizeof(msg),"%% Too many arguments\r\n");
++              else
++                 fail = command_bad_input(node,warray->indx);
++              fail = term_vty_write(node,msg, strlen(msg));
++              return fail;
++          }   
++ 
++          /* Ok, now we have just 1 arg, begin parsing...*/
++ 
++          /* Command 'interface' is special because we need to do some things */   
++          if (!strcmp("interface", prot_comms[x].desc))
++          {
++             p = dlist_search(interfaces->list, interfaces->cmp, (void *)warray->word[warray->indx]);
++             iface_data = (struct interface_data *) dlist_data(p);
++ 
++             if (p == NULL)
++             {
++                fail = command_bad_input(node, warray->indx);
++                return fail;
++             }
++              /* Don't repeat interface...*/
++             if (!dlist_search(node->used_ints->list, node->used_ints->cmp, (void *)warray->word[warray->indx]))
++             {
++                 if (interfaces_enable(warray->word[warray->indx]) < 0 )
++                 {
++                    fail = command_bad_input(node,warray->indx);
++                    return fail;
++                 }
++                 interface_new = (struct interface_data *) calloc(1, sizeof(struct interface_data));
++                 memcpy((void *)interface_new, (void *) iface_data, sizeof(struct interface_data));
++                 node->used_ints->list = dlist_append(node->used_ints->list, (void *) interface_new);
++             }
++             return 0;
++          }
++ 
++          tmp_val=malloc(prot_comms[x].size_print);
++          memset(tmp_val,0,prot_comms[x].size_print);
++          fail = parser_filter_param( prot_comms[x].type, 
++                                      tmp_val, 
++                                      warray->word[warray->indx], 
++                                      prot_comms[x].size_print, 
++                                      prot_comms[x].min, 
++                                      prot_comms[x].max);
++          if (fail == -1)
++              return (command_bad_input(node,warray->indx));
++          if (protocols[proto].edit_tlv) {
++              fail=protocols[proto].edit_tlv(node, TLV_ADD, NULL, prot_comms[x].id, tmp_val);
++          }
++ 
++          /*
++          if ( prot_comms[x].type == FIELD_IP)
++          {
++             memcpy((void *)&aux_long, node->protocol[proto].commands_param[x], 4);
++             aux_long = ntohl(aux_long);
++             memcpy((void *)node->protocol[proto].commands_param[x], (void *)&aux_long, 4);
++          }*/
++     }
++     
++     vty->repeat_command= 1;
++ 
++     return fail;   
++ }
++ 
++ 
+  
+  
+  /*
+***************
+*** 1924,1928 ****
+     return fail;         
+  }
+  
+! /* vim:set tabstop=4:set expandtab:set shiftwidth=4:set textwidth=78: */
+  
+--- 2118,2122 ----
+     return fail;         
+  }
+  
+! /* vim: set tabstop=4 expandtab shiftwidth=4 textwidth=78: */
+  
+diff -rc yersinia-0.7/src/commands-struct.h yersinia-0.7.new/src/commands-struct.h
+*** yersinia-0.7/src/commands-struct.h	2006-06-18 17:23:33.000000000 +0200
+--- yersinia-0.7.new/src/commands-struct.h	2006-11-12 22:00:06.000000000 +0100
+***************
+*** 32,38 ****
+  struct commands { 
+     u_int8_t proto; /* Valid for what protocol? */
+     char *s;  /* descr */
+!    int8_t states[5]; /* Valid for what state? */
+     char *help;     /* Help text  */
+     char *params;   /* Parameters */
+     int8_t (*command)(struct term_node *, struct words_array *, int16_t, int8_t, int8_t, u_int8_t, struct commands *, int8_t);
+--- 32,38 ----
+  struct commands { 
+     u_int8_t proto; /* Valid for what protocol? */
+     char *s;  /* descr */
+!    int8_t states[7]; /* Valid for what state? */
+     char *help;     /* Help text  */
+     char *params;   /* Parameters */
+     int8_t (*command)(struct term_node *, struct words_array *, int16_t, int8_t, int8_t, u_int8_t, struct commands *, int8_t);
+***************
+*** 50,55 ****
+--- 50,56 ----
+  int8_t command_cancel_proto(struct term_node *, struct words_array *, int16_t, int8_t, int8_t, u_int8_t, struct commands *, int8_t);
+  int8_t command_clear_proto(struct term_node *, struct words_array *, int16_t, int8_t, int8_t, u_int8_t, struct commands *, int8_t);
+  int8_t command_set_proto(struct term_node *, struct words_array *, int16_t, int8_t, int8_t, u_int8_t, struct commands *, int8_t);
++ int8_t command_set_extra(struct term_node *, struct words_array *, int16_t, int8_t, int8_t, u_int8_t, struct commands *, int8_t);
+  
+  int8_t command_show_attacks(struct term_node *, struct words_array *, int16_t, int8_t, int8_t, u_int8_t, struct commands *, int8_t);
+  int8_t command_show_history(struct term_node *, struct words_array *, int16_t, int8_t, int8_t, u_int8_t, struct commands *, int8_t);
+***************
+*** 63,124 ****
+   
+  
+  struct commands comm_cancel[]={
+!  { ANY_PROTO,  "all", { 0, 0, 0, 1, 0 }, "Cancel all attacks", "<cr>", command_cancel_proto, NULL },  
+!  { LIST_PROTO, NULL,  { 0, 0, 0, 1, 0 }, "Cancel attacks for", NULL,   command_cancel_proto, NULL },
+!  { ANY_PROTO,  NULL,  { 0, 0, 0, 0, 0 },  NULL,                NULL,   NULL, NULL }
+  }; 
+  
+  struct commands comm_clear[]={
+!  { ANY_PROTO,  "all", { 0, 0, 0, 1, 0 }, "Clear all stats", "<cr>", command_clear_proto, NULL },  
+!  { LIST_PROTO, NULL,  { 0, 0, 0, 1, 0 }, "Clear stats for", NULL,   command_clear_proto, NULL },
+!  { ANY_PROTO,  NULL,  { 0, 0, 0, 0, 0 },  NULL,             NULL,   NULL, NULL }
+  }; 
+  
+  struct commands comm_run[]={
+!  { LIST_PROTO, NULL, { 0, 0, 0, 1, 0 }, "Run attacks for", NULL, command_run_proto, NULL },
+!  { ANY_PROTO,  NULL, { 0, 0, 0, 0, 0 },  NULL,             NULL, NULL, NULL } 
+  };
+  
+  struct commands comm_set_proto[]={
+!  { LIST_PARAM, NULL, { 0, 0, 0, 1, 0 },  " ",  NULL, command_set_proto, NULL },
+!  { ANY_PROTO,  NULL, { 0, 0, 0, 0, 0 },  NULL, NULL, NULL, NULL } 
+  };
+  
+  struct commands comm_set[]={
+!  { LIST_PROTO, NULL, { 0, 0, 0, 1, 0 }, "Set params for", NULL, NULL, comm_set_proto },
+!  { ANY_PROTO,  NULL, { 0, 0, 0, 0, 0 },  NULL,            NULL, NULL, NULL } 
+  };
+  
+  struct commands comm_show_proto[]={
+!  { ANY_PROTO, "attacks", { 0, 0, 1, 1, 0 }, "Show running protocol attacks",    "<cr>", command_show_proto_attacks, NULL },
+!  { ANY_PROTO, "params",  { 0, 0, 0, 1, 0 }, "Show protocol params for attacks", "<cr>", command_show_proto_params,  NULL }, 
+!  { ANY_PROTO, "stats",   { 0, 0, 0, 1, 0 }, "Show protocol statistics",         "<cr>", command_show_proto_stats,   NULL },
+!  { ANY_PROTO, NULL,      { 0, 0, 0, 0, 0 },  NULL,                              NULL,  NULL, NULL }
+  };
+  
+  struct commands comm_show[]={
+!  { ANY_PROTO, "attacks",    { 0, 0, 1, 1, 0 }, "Show running attacks",      "<cr>", command_show_attacks, NULL },
+!  { ANY_PROTO, "history",    { 0, 0, 1, 1, 0 }, "Display the session command history", "<cr>", command_show_history, NULL }, 
+!  { ANY_PROTO, "interfaces", { 0, 0, 1, 1, 0 }, "Interface status",          "<cr>", command_show_interfaces, NULL },  
+!  { ANY_PROTO, "stats",      { 0, 0, 1, 1, 0 }, "Show statistics",           "<cr>", command_show_stats, NULL },
+!  { ANY_PROTO, "users",      { 0, 0, 1, 1, 0 }, "Display information about terminal lines", "<cr>", command_show_users, NULL },
+!  { ANY_PROTO, "version",    { 0, 0, 1, 1, 0 }, "System hardware and software status", "<cr>", command_show_version, NULL },
+!  { LIST_PROTO, NULL,        { 0, 0, 0, 1, 0 }, "Show info for",             NULL,   NULL, comm_show_proto },
+!  { ANY_PROTO,  NULL,        { 0, 0, 0, 0, 0 },  NULL,                       NULL,   NULL, NULL }
+  };
+  
+  struct commands comm_common[]={
+!  { ANY_PROTO, "cancel", { 0, 0, 0, 1, 0 }, "Cancel running attack",             NULL,   NULL, comm_cancel },
+!  { ANY_PROTO, "clear",  { 0, 0, 0, 1, 0 }, "Clear stats",                       NULL,   NULL, comm_clear  },
+!  { ANY_PROTO, "cls",    { 0, 0, 1, 1, 0 }, "Clear screen",                      "<cr>", command_cls,     NULL },
+!  { ANY_PROTO, "disable",{ 0, 0, 0, 1, 0 }, "Turn off privileged commands",      "<cr>", command_disable, NULL },
+!  { ANY_PROTO, "enable", { 0, 0, 1, 0, 0 }, "Go to administration level",        "<cr>", command_enable,  NULL },
+!  { ANY_PROTO, "exit",   { 0, 0, 1, 1, 0 }, "Exit from current level",           "<cr>", command_exit,    NULL },  
+!  { ANY_PROTO, "prueba", { 0, 0, 0, 1, 0 }, "Test command",                      "<cr>", command_prueba,  NULL },
+!  { ANY_PROTO, "run",    { 0, 0, 0, 1, 0 }, "Run attack",                        NULL,   NULL, comm_run  }, 
+!  { ANY_PROTO, "set",    { 0, 0, 0, 1, 0 }, "Set specific params for protocols", NULL,   NULL, comm_set  },
+!  { ANY_PROTO, "show",   { 0, 0, 1, 1, 0 }, "Show running system information",   NULL,   NULL, comm_show },
+!  { ANY_PROTO, NULL,     { 0, 0, 0, 0, 0,}, NULL,                                NULL,   NULL, NULL      }
+  };
+  
+  
+--- 64,131 ----
+   
+  
+  struct commands comm_cancel[]={
+!  { ANY_PROTO,  "all", { 0, 0, 0, 1, 0, 0, 0 }, "Cancel all attacks", "<cr>", command_cancel_proto, NULL },  
+!  { LIST_PROTO, NULL,  { 0, 0, 0, 1, 0, 0, 0 }, "Cancel attacks for", NULL,   command_cancel_proto, NULL },
+!  { ANY_PROTO,  NULL,  { 0, 0, 0, 0, 0, 0, 0 },  NULL,                NULL,   NULL, NULL }
+  }; 
+  
+  struct commands comm_clear[]={
+!  { ANY_PROTO,  "all", { 0, 0, 0, 1, 0, 0, 0 }, "Clear all stats", "<cr>", command_clear_proto, NULL },  
+!  { LIST_PROTO, NULL,  { 0, 0, 0, 1, 0, 0, 0 }, "Clear stats for", NULL,   command_clear_proto, NULL },
+!  { ANY_PROTO,  NULL,  { 0, 0, 0, 0, 0, 0, 0 },  NULL,             NULL,   NULL, NULL }
+  }; 
+  
+  struct commands comm_run[]={
+!  { LIST_PROTO, NULL, { 0, 0, 0, 1, 0, 0, 0 }, "Run attacks for", NULL, command_run_proto, NULL },
+!  { ANY_PROTO,  NULL, { 0, 0, 0, 0, 0, 0, 0 },  NULL,             NULL, NULL, NULL } 
+  };
+  
+  struct commands comm_set_proto[]={
+!  { LIST_PARAM, NULL, { 0, 0, 0, 1, 0, 0, 0 },  " ",  NULL, command_set_proto, NULL },
+!  { ANY_PROTO,  NULL, { 0, 0, 0, 0, 0, 0, 0 },  NULL, NULL, NULL, NULL } 
+! };
+! 
+! struct commands comm_set_extra[]={
+!  { LIST_PARAM, NULL, { 0, 0, 0, 1, 0, 0, 1 },  " ",  NULL, command_set_extra, NULL },
+!  { ANY_PROTO,  NULL, { 0, 0, 0, 0, 0, 0, 0 },  NULL, NULL, NULL, NULL } 
+  };
+  
+  struct commands comm_set[]={
+!  { LIST_PROTO, NULL, { 0, 0, 0, 1, 0, 0, 0 }, "Set params for", NULL, NULL, comm_set_proto },
+!  { ANY_PROTO,  NULL, { 0, 0, 0, 0, 0, 0, 0 },  NULL,            NULL, NULL, NULL } 
+  };
+  
+  struct commands comm_show_proto[]={
+!  { ANY_PROTO, "attacks", { 0, 0, 1, 1, 0, 0, 1 }, "Show running protocol attacks",    "<cr>", command_show_proto_attacks, NULL },
+!  { ANY_PROTO, "params",  { 0, 0, 0, 1, 0, 0, 1 }, "Show protocol params for attacks", "<cr>", command_show_proto_params,  NULL }, 
+!  { ANY_PROTO, "stats",   { 0, 0, 0, 1, 0, 0, 1 }, "Show protocol statistics",         "<cr>", command_show_proto_stats,   NULL },
+!  { ANY_PROTO, NULL,      { 0, 0, 0, 0, 0, 0, 0 },  NULL,                              NULL,  NULL, NULL }
+  };
+  
+  struct commands comm_show[]={
+!  { ANY_PROTO, "attacks",    { 0, 0, 1, 1, 0, 0, 1 }, "Show running attacks",      "<cr>", command_show_attacks, NULL },
+!  { ANY_PROTO, "history",    { 0, 0, 1, 1, 0, 0, 1 }, "Display the session command history", "<cr>", command_show_history, NULL }, 
+!  { ANY_PROTO, "interfaces", { 0, 0, 1, 1, 0, 0, 1 }, "Interface status",          "<cr>", command_show_interfaces, NULL },  
+!  { ANY_PROTO, "stats",      { 0, 0, 1, 1, 0, 0, 1 }, "Show statistics",           "<cr>", command_show_stats, NULL },
+!  { ANY_PROTO, "users",      { 0, 0, 1, 1, 0, 0, 1 }, "Display information about terminal lines", "<cr>", command_show_users, NULL },
+!  { ANY_PROTO, "version",    { 0, 0, 1, 1, 0, 0, 1 }, "System hardware and software status", "<cr>", command_show_version, NULL },
+!  { LIST_PROTO, NULL,        { 0, 0, 0, 1, 0, 0, 1 }, "Show info for",             NULL,   NULL, comm_show_proto },
+!  { ANY_PROTO,  NULL,        { 0, 0, 0, 0, 0, 0, 0 },  NULL,                       NULL,   NULL, NULL }
+  };
+  
+  struct commands comm_common[]={
+!  { ANY_PROTO, "cancel", { 0, 0, 0, 1, 0, 0, 0 }, "Cancel running attack",             NULL,   NULL, comm_cancel },
+!  { ANY_PROTO, "clear",  { 0, 0, 0, 1, 0, 0, 0 }, "Clear stats",                       NULL,   NULL, comm_clear  },
+!  { ANY_PROTO, "cls",    { 0, 0, 1, 1, 0, 0, 1 }, "Clear screen",                      "<cr>", command_cls,     NULL },
+!  { ANY_PROTO, "disable",{ 0, 0, 0, 1, 0, 0, 0 }, "Turn off privileged commands",      "<cr>", command_disable, NULL },
+!  { ANY_PROTO, "enable", { 0, 0, 1, 0, 0, 0, 0 }, "Go to administration level",        "<cr>", command_enable,  NULL },
+!  { ANY_PROTO, "exit",   { 0, 0, 1, 1, 0, 0, 1 }, "Exit from current level",           "<cr>", command_exit,    NULL },  
+!  { ANY_PROTO, "prueba", { 0, 0, 0, 1, 0, 0, 0 }, "Test command",                      "<cr>", command_prueba,  NULL },
+!  { ANY_PROTO, "run",    { 0, 0, 0, 1, 0, 0, 0 }, "Run attack",                        NULL,   NULL, comm_run  }, 
+!  { ANY_PROTO, "set",    { 0, 0, 0, 1, 0, 0, 0 }, "Set specific params for protocols", NULL,   NULL, comm_set  },
+!  { ANY_PROTO, "show",   { 0, 0, 1, 1, 0, 0, 1 }, "Show running system information",   NULL,   NULL, comm_show },
+!  { LIST_PARAM, NULL,	{ 0, 0, 0, 0, 0, 0, 1 }, "Set",				NULL,   command_set_extra, NULL },
+!  { ANY_PROTO, NULL,     { 0, 0, 0, 0, 0, 0, 0 }, NULL,                                NULL,   NULL, NULL      }
+  };
+  
+  
+diff -rc yersinia-0.7/src/parser.c yersinia-0.7.new/src/parser.c
+*** yersinia-0.7/src/parser.c	2006-06-18 17:23:33.000000000 +0200
+--- yersinia-0.7.new/src/parser.c	2006-11-12 23:08:47.000000000 +0100
+***************
+*** 1354,1360 ****
+     struct in_addr addr;
+  
+  //write_log(0, "tipe es %d, value %s, printable %s, size %d, min %d y max %d\n", type, value, printable, size_print, min, max);
+!    if (type == FIELD_TLV)
+        return 0;
+  
+     if (!printable || !value || !strlen(printable) || (strlen(printable) > size_print) )
+--- 1354,1360 ----
+     struct in_addr addr;
+  
+  //write_log(0, "tipe es %d, value %s, printable %s, size %d, min %d y max %d\n", type, value, printable, size_print, min, max);
+!    if (type == FIELD_TLV || type == FIELD_EXTRA)
+        return 0;
+  
+     if (!printable || !value || !strlen(printable) || (strlen(printable) > size_print) )
+diff -rc yersinia-0.7/src/protocols.c yersinia-0.7.new/src/protocols.c
+*** yersinia-0.7/src/protocols.c	2006-06-18 17:23:33.000000000 +0200
+--- yersinia-0.7.new/src/protocols.c	2006-11-12 18:37:19.000000000 +0100
+***************
+*** 142,147 ****
+--- 142,158 ----
+       protocols[proto].params_sort[i] = i;
+        
+     protocol_sort_params(proto,protocols[proto].params_sort,nparams);
++ 
++    /* Sort extra params... */  
++    protocols[proto].extra_params_sort = (u_int8_t *)calloc(1,extra_nparams);
++ 
++    if (protocols[proto].extra_params_sort == NULL)
++       return -1;
++ 
++    for(i=0; i < extra_nparams; i++)
++      protocols[proto].extra_params_sort[i] = i;
++       
++    protocol_sort_extra_params(proto,protocols[proto].extra_params_sort,extra_nparams); 
+  #endif
+  
+     return 0;
+***************
+*** 302,307 ****
+--- 313,341 ----
+  }
+  
+  
++ void
++ protocol_sort_extra_params(u_int8_t proto, u_int8_t *aux_comm, u_int8_t nparams)
++ {
++    u_int8_t i, j, aux_data;
++    char *aux;
++ 
++    for(i=0; i < nparams; i++)
++    { 
++       for(j=nparams-1; j > i; --j) 
++       {
++           aux = protocol_sort_str(protocols[proto].extra_parameters[aux_comm[j-1]].desc,
++                                   protocols[proto].extra_parameters[aux_comm[j]].desc);
++           if (aux == protocols[proto].extra_parameters[aux_comm[j-1]].desc)
++           {
++              aux_data = aux_comm[j-1];
++              aux_comm[j-1] = aux_comm[j];
++              aux_comm[j] = aux_data;
++           }
++       }
++    }
++ }
++ 
++ 
+  char *
+  protocol_sort_str(char *s1, char *s2)
+  {
+diff -rc yersinia-0.7/src/protocols.h yersinia-0.7.new/src/protocols.h
+*** yersinia-0.7/src/protocols.h	2006-06-18 17:23:33.000000000 +0200
+--- yersinia-0.7.new/src/protocols.h	2006-11-12 18:28:22.000000000 +0100
+***************
+*** 142,148 ****
+         u_int16_t size_print; /* Allowed printable size */
+         u_int8_t  mwindow; /* 1 if appears in mwindow, 0 if not */
+         const struct tuple_type_desc *meaning; /* field value description */
+!        /* int8_t  (*filter)(void *, void *, char *);*/ /* Filtering function specific for protocol */
+  };
+  
+  /* Struct for the list of extra params */
+--- 142,148 ----
+         u_int16_t size_print; /* Allowed printable size */
+         u_int8_t  mwindow; /* 1 if appears in mwindow, 0 if not */
+         const struct tuple_type_desc *meaning; /* field value description */
+!        /*int8_t  (*filter)(void *, void *, char *); */ /* Filtering function specific for protocol */
+  };
+  
+  /* Struct for the list of extra params */
+***************
+*** 203,208 ****
+--- 203,209 ----
+         u_int8_t nparams;
+  #ifdef HAVE_REMOTE_ADMIN
+         u_int8_t *params_sort;
++ 	   u_int8_t *extra_params_sort;
+  #endif
+         struct commands_param_extra *extra_parameters;
+         u_int8_t extra_nparams;
+***************
+*** 231,236 ****
+--- 232,238 ----
+  #ifdef HAVE_REMOTE_ADMIN
+  char  *protocol_sort_str(char *, char *);
+  void   protocol_sort_params(u_int8_t, u_int8_t *, u_int8_t);
++ void   protocol_sort_extra_params(u_int8_t, u_int8_t *, u_int8_t);
+  #endif
+  extern void write_log( u_int16_t mode, char *msg, ... );
+  
+diff -rc yersinia-0.7/src/terminal.c yersinia-0.7.new/src/terminal.c
+*** yersinia-0.7/src/terminal.c	2006-06-18 17:23:33.000000000 +0200
+--- yersinia-0.7.new/src/terminal.c	2006-11-12 21:20:38.000000000 +0100
+***************
+*** 566,571 ****
+--- 566,572 ----
+  term_vty_prompt(struct term_node *node)
+  {
+     struct term_vty *vty = node->specific;
++    char tmp[100];
+     
+     switch(node->state)
+     {
+***************
+*** 609,614 ****
+--- 610,621 ----
+                   strlen(term_states[node->state].prompt2))
+               );
+        break;
++       case EXTRA_STATE:
++       		snprintf(tmp,99,term_states[node->state].prompt2,protocols[node->proto].name_comm);
++      	     return (term_vty_write(node, tmp,
++ 	     	strlen(tmp))
++ 	     );
++      break;
+     }
+     
+     return -1;
+***************
+*** 1060,1065 ****
+--- 1067,1113 ----
+                              vty->more_tx = vty->buffer_tx;
+                              term_vty_write(node,"\r\n",2);
+        break;
++ 
++       case EXTRA_STATE: 
++                          for(i=0;i<vty->command_len;i++)
++                          {
++                             if (*(vty->buf_command+i) != SPACE)
++                             {
++                                gotit=1;
++                                break;
++                             }
++                          }
++                            
++                          if (!gotit)
++                          {
++                             term_vty_clear_command(node);
++                             return 0;
++                          }
++ 
++                          if (term_vty_history_add(node, vty->buf_command, 
++                                                   vty->command_len) == -1)
++                             return -1;
++                
++                          vty->more_tx = vty->buffer_tx;
++                          
++                          warray = (struct words_array *)calloc(1,sizeof(struct words_array));
++                          if (warray == NULL)
++                             return -1;
++                          if (term_vty_set_words(node, warray) == -1)
++                          {
++                             term_vty_free_words(warray);
++                             return -1;
++                          }
++ #ifdef HAVE_REMOTE_ADMIN                         
++                          if (command_entry_point(node,warray,0,0,0) == -1)
++                          {
++                             term_vty_free_words(warray);
++                             return -1;
++                          }
++ #endif                         
++                          term_vty_free_words(warray);
++ 
++       break;
+     }
+     
+     term_vty_clear_command(node);
+***************
+*** 1119,1124 ****
+--- 1167,1175 ----
+        case INTERFACE_STATE:
+              node->state = ENABLE_STATE;
+        break;
++       case EXTRA_STATE:
++       	node->state = ENABLE_STATE;
++ 	break;
+     }
+     
+     return 0;
+diff -rc yersinia-0.7/src/terminal-defs.h yersinia-0.7.new/src/terminal-defs.h
+*** yersinia-0.7/src/terminal-defs.h	2006-06-18 17:23:33.000000000 +0200
+--- yersinia-0.7.new/src/terminal-defs.h	2006-11-12 11:43:37.000000000 +0100
+***************
+*** 168,173 ****
+--- 168,174 ----
+  #define ENABLE_STATE    3
+  #define PARAMS_STATE    4
+  #define INTERFACE_STATE 5
++ #define EXTRA_STATE 	6
+  
+  
+  /* Ncurses field position */
+***************
+*** 355,360 ****
+--- 356,362 ----
+         struct    protocol protocol[MAX_PROTOCOLS];
+         u_int8_t  mac_spoofing;
+         void     *specific;
++        u_int8_t	 proto;
+  };
+  
+  #define INITIAL 0
+diff -rc yersinia-0.7/src/terminal.h yersinia-0.7.new/src/terminal.h
+*** yersinia-0.7/src/terminal.h	2006-06-18 17:23:33.000000000 +0200
+--- yersinia-0.7.new/src/terminal.h	2006-11-12 21:18:44.000000000 +0100
+***************
+*** 113,119 ****
+      { "NORMAL_STATE",    "yersinia> ",     "Password:", 1, 1, 1, 1, TTY_TIMEOUT   },
+      { "ENABLE_STATE",    "yersinia# ",     NULL,        1, 1, 1, 1, TTY_TIMEOUT   },
+      { "PARAMS_STATE",    NULL        ,     NULL,        1, 0, 0, 1, TTY_TIMEOUT   },
+!     { "INTERFACE_STATE", "yersinia(if)# ", NULL,        1, 1, 1, 1, TTY_TIMEOUT   }
+  };
+  
+  
+--- 113,120 ----
+      { "NORMAL_STATE",    "yersinia> ",     "Password:", 1, 1, 1, 1, TTY_TIMEOUT   },
+      { "ENABLE_STATE",    "yersinia# ",     NULL,        1, 1, 1, 1, TTY_TIMEOUT   },
+      { "PARAMS_STATE",    NULL        ,     NULL,        1, 0, 0, 1, TTY_TIMEOUT   },
+!     { "INTERFACE_STATE", "yersinia(if)# ", NULL,        1, 1, 1, 1, TTY_TIMEOUT   },
+!     { "PROTO_EXTRA", "yersinia(%s)# ", NULL,        1, 1, 1, 1, TTY_TIMEOUT   }
+  };
+  
+  

@@ -1,0 +1,3 @@
+#!/bin/sh
+
+rsync -auv --exclude xgl-coffee /usr/local/portage/ marmarek@boss.staszic.waw.pl:patches/portage/

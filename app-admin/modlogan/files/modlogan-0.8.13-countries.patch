@@ -1,0 +1,18 @@
+--- src/mlocale.c.orig	2007-10-17 12:26:27.982354666 +0200
++++ src/mlocale.c	2007-10-17 12:23:21.156879789 +0200
+@@ -186,6 +186,7 @@
+ /* .er */	case NDX2('e','r'):	return _("Eritrea");
+ /* .es */	case NDX2('e','s'):	return _("Spain");
+ /* .et */	case NDX2('e','t'):	return _("Ethiopia");
++/* .eu */	case NDX2('e','u'):	return _("Europe");
+ /* .fi */	case NDX2('f','i'):	return _("Finland");
+ /* .fj */	case NDX2('f','j'):	return _("Fiji");
+ /* .fk */	case NDX2('f','k'):	return _("Falkland Islands (Malvinas)");
+@@ -195,6 +196,7 @@
+ /* .fx */	case NDX2('f','x'):	return _("France, Metropolitan");
+ /* .ga */	case NDX2('g','a'):	return _("Gabon");
+ /* .gb */	case NDX2('g','b'):	return _("Great Britain (UK)");
++/* .gbl */	case NDX3('g','b','l'):	return _("Unknown country (.gbl)");
+ /* .gd */	case NDX2('g','d'):	return _("Grenada");
+ /* .ge */	case NDX2('g','e'):	return _("Georgia");
+ /* .gf */	case NDX2('g','f'):	return _("French Guiana");

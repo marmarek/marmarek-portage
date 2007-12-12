@@ -1,0 +1,60 @@
+#!/sbin/runscript
+# Copyright 1999-2007 Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+# $Header: /var/cvsroot/gentoo-x86/net-fs/nfs-utils/files/rpc.gssd.initd,v 1.4 2007/05/12 11:27:06 vapier Exp $
+
+[ -e /etc/conf.d/nfs ] && . /etc/conf.d/nfs
+
+   gssd=/usr/sbin/rpc.gssd
+svcgssd=/usr/sbin/rpc.svcgssd
+
+depend() {
+	use ypbind net
+	need portmap
+	after quota
+}
+
+mount_nfsd() {
+	# Make sure nfs support is loaded in the kernel #64709
+	if [ -e /proc/modules ] && ! grep -qs nfsd /proc/filesystems ; then
+		modprobe nfsd &> /dev/null
+	fi
+
+	# This is the new "kernel 2.6 way" to handle the exports file
+	if grep -qs nfsd /proc/filesystems ; then
+		if ! grep -qs "nfsd /proc/fs/nfs" /proc/mounts ; then
+			ebegin "Mounting nfsd filesystem in /proc"
+			mount -t nfsd -o nodev,noexec,nosuid nfsd /proc/fs/nfs
+			eend $?
+		fi
+	fi
+}
+
+start_it() {
+	ebegin "Starting $1"
+	shift
+	"$@"
+	eend $?
+	ret=$((ret + $?))
+}
+start() {
+	mount_nfsd
+
+	local ret=0
+	start_it gssd ${gssd} ${OPTS_RPC_GSSD}
+	start_it svcgssd ${svcgssd} ${OPTS_RPC_SVCGSSD}
+	return ${ret}
+}
+
+stop_it() {
+	ebegin "Stopping $1"
+	start-stop-daemon --stop --quiet --exec $2
+	eend $?
+	ret=$((ret + $?))
+}
+stop() {
+	local ret=0
+	stop_it gssd ${gssd}
+	stop_it svcgssd ${svcgssd}
+	return ${ret}
+}

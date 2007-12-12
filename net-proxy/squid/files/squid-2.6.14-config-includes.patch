@@ -1,0 +1,143 @@
+--- src/cache_cf.c.orig	2007-06-24 00:50:18.000000000 +0200
++++ src/cache_cf.c	2007-09-19 23:32:45.000000000 +0200
+@@ -323,20 +323,62 @@
+     store_maxobjsize = ms;
+ }
+ 
++typedef struct _cfg_tree cfg_tree_node; 
++struct _cfg_tree { /* XXX: saves inodes of config files ever seen */ 
++    ino_t cfg_inode; 
++    cfg_tree_node *next; 
++}; 
++cfg_tree_node *cfg_tree = NULL; 
++
++    static void 
++free_cfg_tree(cfg_tree_node ** head) 
++{ 
++    cfg_tree_node *p; 
++    while ((p = *head) != NULL) { 
++	*head = p->next; 
++	safe_free(p); 
++    } 
++} 
++
++int err_count = 0; /* XXX need it as global now */ 
++ 
++/* NB! This procedure is recursive, for includes. Keep in mind when modifying */ 
+ int
+-parseConfigFile(const char *file_name)
++do_parseConfigFile(const char *file_name)
+ {
+     FILE *fp = NULL;
++    size_t toklen; 
+     char *token = NULL;
+     char *tmp_line = NULL;
+     int tmp_line_len = 0;
+     size_t config_input_line_len;
+-    int err_count = 0;
+-    configFreeMemory();
+-    default_all();
++    char *my_file_name; 
++    char *my_cfg_filename = NULL; 
++    char *my_config_input_line = NULL; 
++    int my_config_lineno; 
++    struct stat sb; 
++    cfg_tree_node *head; 
++
++    if ((stat(file_name, &sb)) < 0) 
++	fatalf("Unable to stat configuration file: %s: %s", 
++		file_name, xstrerror()); 
++
++    head=cfg_tree; 
++    while (head != NULL) { 
++	if (sb.st_ino==head->cfg_inode) 
++	    fatalf("Recursive includes in configuration file: %s:%d: '%s'", 
++		    cfg_filename, config_lineno, config_input_line); 
++	head = head->next; 
++    } 
++    head=xmalloc(sizeof(cfg_tree_node)); 
++    head->cfg_inode=sb.st_ino; 
++    head->next=cfg_tree; 
++    cfg_tree = head; 
++
+     if ((fp = fopen(file_name, "r")) == NULL)
+ 	fatalf("Unable to open configuration file: %s: %s",
+-	    file_name, xstrerror());
++		file_name, xstrerror());
++    debug(3, 2) ("do_parseConfigFile: Processing file: '%s'\n", cfg_filename); 
+ #ifdef _SQUID_WIN32_
+     setmode(fileno(fp), O_TEXT);
+ #endif
+@@ -356,6 +398,42 @@
+ 	if (config_input_line[0] == '\0')
+ 	    continue;
+ 
++ 
++	/* XXX can't use strtok here, because of recursive calls */ 
++	token = config_input_line; 
++	token += strspn(token, w_space); 
++	toklen = strcspn(token, w_space); 
++	if (!toklen) 
++	    continue; 
++	/* Get include filename */ 
++	if (!strncmp(token,"include:",toklen)) { 
++	    token+=toklen; 
++	    token += strspn(token, w_space); 
++	    toklen = strcspn(token, w_space); 
++	    if(toklen<1) { 
++		debug(3, 0) ("do_parseConfigFile: %s line %d unrecognized: '%s'\n", 
++			cfg_filename, 
++			config_lineno, 
++			config_input_line); 
++		err_count++; 
++		continue; 
++	    } 
++	    token[toklen] = '\0'; 
++
++	    /* Save current file state on stack */ 
++	    my_cfg_filename=cfg_filename; 
++	    my_config_lineno=config_lineno; 
++	    my_file_name=xstrdup(token); 
++
++	    do_parseConfigFile(my_file_name); 
++
++	    /* Restore current file state from stack */ 
++	    cfg_filename=my_cfg_filename; 
++	    config_lineno=my_config_lineno; 
++	    safe_free(my_file_name); 
++
++	    continue; 
++	} 
+ 	config_input_line_len = strlen(config_input_line);
+ 	tmp_line = (char *) xrealloc(tmp_line, tmp_line_len + config_input_line_len + 1);
+ 	strcpy(tmp_line + tmp_line_len, config_input_line);
+@@ -368,15 +446,26 @@
+ 	}
+ 	debug(3, 5) ("Processing: '%s'\n", tmp_line);
+ 	if (!parse_line(tmp_line)) {
+-	    debug(3, 0) ("parseConfigFile: line %d unrecognized: '%s'\n",
+-		config_lineno,
+-		config_input_line);
++	    debug(3, 0) ("do_parseConfigFile: %s line %d unrecognized: '%s'\n", 
++		    cfg_filename, 
++		    config_lineno, 
++		    config_input_line);
+ 	    err_count++;
+ 	}
+ 	safe_free(tmp_line);
+ 	tmp_line_len = 0;
+     }
+     fclose(fp);
++} 
++ 
++int 
++parseConfigFile(const char *file_name) 
++{ 
++    configFreeMemory();
++    free_all(); 
++    default_all(); 
++    free_cfg_tree(&cfg_tree); 
++    do_parseConfigFile(file_name); 
+     defaults_if_none();
+     configDoConfigure();
+     if (opt_send_signal == -1) {

@@ -1,0 +1,22 @@
+diff -rc /var/tmp/portage/net-analyzer/yersinia-0.7/work/yersinia-0.7/src/cdp.c /home/marmarek/yersinia-0.7/src/cdp.c
+*** /var/tmp/portage/net-analyzer/yersinia-0.7/work/yersinia-0.7/src/cdp.c	2006-06-18 17:23:33.000000000 +0200
+--- /home/marmarek/yersinia-0.7/src/cdp.c	2006-11-12 22:41:24.000000000 +0100
+***************
+*** 329,336 ****
+      cdp_create_tlv_item(cdp_data, CDP_TYPE_ADDRESS, (u_int32_t *)&lbl32);
+      cdp_create_tlv_item(cdp_data, CDP_TYPE_PORTID, "Ethernet0");
+      cdp_create_tlv_item(cdp_data, CDP_TYPE_CAPABILITY, (u_int8_t *)&aux_long);
+!     cdp_create_tlv_item(cdp_data, CDP_TYPE_VERSION, VERSION);
+!     cdp_create_tlv_item(cdp_data, CDP_TYPE_PLATFORM, "yersinia");
+  
+      while(!attacks->attack_th.stop)
+      {
+--- 329,336 ----
+      cdp_create_tlv_item(cdp_data, CDP_TYPE_ADDRESS, (u_int32_t *)&lbl32);
+      cdp_create_tlv_item(cdp_data, CDP_TYPE_PORTID, "Ethernet0");
+      cdp_create_tlv_item(cdp_data, CDP_TYPE_CAPABILITY, (u_int8_t *)&aux_long);
+! //    cdp_create_tlv_item(cdp_data, CDP_TYPE_VERSION, VERSION);
+! //    cdp_create_tlv_item(cdp_data, CDP_TYPE_PLATFORM, "yersinia");
+  
+      while(!attacks->attack_th.stop)
+      {

@@ -1,0 +1,21 @@
+--- lib/sl/Makefile.am	2007-11-15 17:04:54.000000000 +0100
++++ lib/sl/Makefile.am.new	2007-11-15 17:06:18.000000000 +0100
+@@ -12,17 +12,13 @@
+ 
+ include_HEADERS = sl.h
+ 
+-lib_LTLIBRARIES = libsl.la libss.la
++lib_LTLIBRARIES = libsl.la
+ libsl_la_LDFLAGS = -version-info 2:1:2
+-libss_la_LDFLAGS = -version-info 1:6:1
+ 
+ libsl_la_LIBADD = @LIB_readline@
+-libss_la_LIBADD = @LIB_readline@ @LIB_com_err@
+ 
+ dist_libsl_la_SOURCES = sl_locl.h sl.c roken_rename.h
+ nodist_libsl_la_SOURCES = $(ES)
+-dist_libss_la_SOURCES = $(dist_libsl_la_SOURCES) ss.c ss.h
+-nodist_libss_la_SOURCES = $(ES)
+ 
+ TESTS = test_sl
+ check_PROGRAMS = $(TESTS)	

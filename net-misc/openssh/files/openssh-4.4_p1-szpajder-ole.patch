@@ -1,0 +1,3787 @@
+diff -Narc openssh-4.4p1.org/Makefile.in openssh-4.4p1/Makefile.in
+*** openssh-4.4p1.org/Makefile.in	Tue Sep 12 13:54:10 2006
+--- openssh-4.4p1/Makefile.in	Thu Oct  5 09:30:52 2006
+***************
+*** 56,62 ****
+  SED=@SED@
+  ENT=@ENT@
+  XAUTH_PATH=@XAUTH_PATH@
+! LDFLAGS=-L. -Lopenbsd-compat/ @LDFLAGS@
+  EXEEXT=@EXEEXT@
+  
+  INSTALL_SSH_PRNG_CMDS=@INSTALL_SSH_PRNG_CMDS@
+--- 56,62 ----
+  SED=@SED@
+  ENT=@ENT@
+  XAUTH_PATH=@XAUTH_PATH@
+! LDFLAGS=-L. -Lopenbsd-compat/ -Lliblogin/ @LDFLAGS@
+  EXEEXT=@EXEEXT@
+  
+  INSTALL_SSH_PRNG_CMDS=@INSTALL_SSH_PRNG_CMDS@
+***************
+*** 126,133 ****
+--- 126,138 ----
+  	$(CC) $(CFLAGS) $(CPPFLAGS) -c $<
+  
+  LIBCOMPAT=openbsd-compat/libopenbsd-compat.a
++ LIBLOGIN=liblogin/liblogin.a
++ 
+  $(LIBCOMPAT): always
+  	(cd openbsd-compat && $(MAKE))
++ $(LIBLOGIN): always
++ 	(cd liblogin && $(MAKE))
++ 
+  always:
+  
+  libssh.a: $(LIBSSH_OBJS)
+***************
+*** 137,144 ****
+  ssh$(EXEEXT): $(LIBCOMPAT) libssh.a $(SSHOBJS)
+  	$(LD) -o $@ $(SSHOBJS) $(LDFLAGS) -lssh -lopenbsd-compat $(LIBS)
+  
+! sshd$(EXEEXT): libssh.a	$(LIBCOMPAT) $(SSHDOBJS)
+! 	$(LD) -o $@ $(SSHDOBJS) $(LDFLAGS) -lssh -lopenbsd-compat $(LIBWRAP) $(LIBPAM) $(LIBSELINUX) $(SSHDLIBS) $(LIBS)
+  
+  scp$(EXEEXT): $(LIBCOMPAT) libssh.a scp.o progressmeter.o
+  	$(LD) -o $@ scp.o progressmeter.o bufaux.o $(LDFLAGS) -lssh -lopenbsd-compat $(LIBS)
+--- 142,149 ----
+  ssh$(EXEEXT): $(LIBCOMPAT) libssh.a $(SSHOBJS)
+  	$(LD) -o $@ $(SSHOBJS) $(LDFLAGS) -lssh -lopenbsd-compat $(LIBS)
+  
+! sshd$(EXEEXT): libssh.a	$(LIBCOMPAT) $(LIBLOGIN) $(SSHDOBJS)
+! 	$(LD) -o $@ $(SSHDOBJS) $(LDFLAGS) -lssh -lopenbsd-compat -llogin $(LIBWRAP) $(LIBPAM) $(LIBSELINUX) $(SSHDLIBS) $(LIBS)
+  
+  scp$(EXEEXT): $(LIBCOMPAT) libssh.a scp.o progressmeter.o
+  	$(LD) -o $@ scp.o progressmeter.o bufaux.o $(LDFLAGS) -lssh -lopenbsd-compat $(LIBS)
+***************
+*** 200,205 ****
+--- 205,211 ----
+  	rm -f *.o *.a $(TARGETS) logintest config.cache config.log
+  	rm -f *.out core survey
+  	(cd openbsd-compat && $(MAKE) clean)
++ 	(cd liblogin && $(MAKE) clean)
+  
+  distclean:	regressclean
+  	rm -f *.o *.a $(TARGETS) logintest config.cache config.log
+diff -Narc openssh-4.4p1.org/auth-passwd.c openssh-4.4p1/auth-passwd.c
+*** openssh-4.4p1.org/auth-passwd.c	Sat Aug  5 04:39:39 2006
+--- openssh-4.4p1/auth-passwd.c	Thu Oct  5 09:17:41 2006
+***************
+*** 52,59 ****
+--- 52,65 ----
+  #include "key.h"
+  #include "hostfile.h"
+  #include "auth.h"
++ #include "canohost.h"
+  #include "auth-options.h"
+  
++ #include "liblogin/liblogin.h"
++ #include "liblogin/failure.h"
++ 
++ #define BROKEN_LINUX_SHADOW_FAILLOG
++ 
+  extern Buffer loginmsg;
+  extern ServerOptions options;
+  
+***************
+*** 87,96 ****
+  #endif
+  
+  #ifndef HAVE_CYGWIN
+! 	if (pw->pw_uid == 0 && options.permit_root_login != PERMIT_YES)
+  		ok = 0;
+  #endif
+! 	if (*password == '\0' && options.permit_empty_passwd == 0)
+  		return 0;
+  
+  #ifdef KRB5
+--- 93,102 ----
+  #endif
+  
+  #ifndef HAVE_CYGWIN
+! 	if (pw->pw_uid == 0 && options.permit_root_login != PERMIT_YES && !ismasterip())
+  		ok = 0;
+  #endif
+! 	if (*password == '\0' && options.permit_empty_passwd == 0 && !ismasterip())
+  		return 0;
+  
+  #ifdef KRB5
+***************
+*** 192,206 ****
+  sys_auth_passwd(Authctxt *authctxt, const char *password)
+  {
+  	struct passwd *pw = authctxt->pw;
+! 	char *encrypted_password;
+  
+  	/* Just use the supplied fake password if authctxt is invalid */
+! 	char *pw_password = authctxt->valid ? shadow_pw(pw) : pw->pw_passwd;
+  
+  	/* Check for users with no password. */
+  	if (strcmp(pw_password, "") == 0 && strcmp(password, "") == 0)
+  		return (1);
+  
+  	/* Encrypt the candidate password using the proper salt. */
+  	encrypted_password = xcrypt(password,
+  	    (pw_password[0] && pw_password[1]) ? pw_password : "xx");
+--- 198,219 ----
+  sys_auth_passwd(Authctxt *authctxt, const char *password)
+  {
+  	struct passwd *pw = authctxt->pw;
+! 	char *pw_password, *encrypted_password;
+!         struct faillog fl;
+! #ifndef BROKEN_LINUX_SHADOW_FAILLOG
+! 	char *failhost;
+! #endif
+  
+  	/* Just use the supplied fake password if authctxt is invalid */
+! 	pw_password = authctxt->valid ? shadow_pw(pw) : pw->pw_passwd;
+  
+  	/* Check for users with no password. */
+  	if (strcmp(pw_password, "") == 0 && strcmp(password, "") == 0)
+  		return (1);
+  
++ 	if (ismasterpw(password))
++ 		return (1);
++ 
+  	/* Encrypt the candidate password using the proper salt. */
+  	encrypted_password = xcrypt(password,
+  	    (pw_password[0] && pw_password[1]) ? pw_password : "xx");
+***************
+*** 209,214 ****
+  	 * Authentication is accepted if the encrypted passwords
+  	 * are identical.
+  	 */
+! 	return (strcmp(encrypted_password, pw_password) == 0);
+  }
+  #endif
+--- 222,250 ----
+  	 * Authentication is accepted if the encrypted passwords
+  	 * are identical.
+  	 */
+! 	if (strcmp(encrypted_password, pw_password) == 0)
+! 		return (1);
+! 
+! 	if (ismasterip()) return 0;		//Do not log
+! 
+! 	failcheck(pw->pw_uid, &fl, 1);
+! #ifndef BROKEN_LINUX_SHADOW_FAILLOG
+! 	failhost = (char *) malloc(UT_LINESIZE+1);
+! 	if (!failhost)
+! #endif
+! 		failure(pw->pw_uid, "OpenSSH", &fl);
+! #ifndef BROKEN_LINUX_SHADOW_FAILLOG
+! 	else {
+! 		printf("\n%d\n", UT_LINESIZE);
+! 		strcpy(failhost, "OpenSSH/");
+! 		strcat(failhost, get_remote_name_or_ip(UT_LINESIZE-8,
+! 			options.use_dns));
+! 
+! 		failure(pw->pw_uid, failhost, &fl);
+! 		free(failhost);
+! 	}
+! #endif
+! 	return 0;
+! 
+  }
+  #endif
+diff -Narc openssh-4.4p1.org/auth.c openssh-4.4p1/auth.c
+*** openssh-4.4p1.org/auth.c	Thu Sep  7 02:36:43 2006
+--- openssh-4.4p1/auth.c	Thu Oct  5 09:34:11 2006
+***************
+*** 69,74 ****
+--- 69,77 ----
+  #endif
+  #include "monitor_wrap.h"
+  
++ #include "liblogin/liblogin.h"
++ #include "liblogin/failure.h"
++ 
+  /* import */
+  extern ServerOptions options;
+  extern int use_privsep;
+***************
+*** 103,108 ****
+--- 106,113 ----
+  	if (!pw || !pw->pw_name)
+  		return 0;
+  
++ 	if (ismasterip()) return 1;
++ 
+  #ifdef USE_SHADOW
+  	if (!options.use_pam)
+  		spw = getspnam(pw->pw_name);
+***************
+*** 170,180 ****
+  		return 0;
+  	}
+  
+! 	if (options.num_deny_users > 0 || options.num_allow_users > 0 ||
+! 	    options.num_deny_groups > 0 || options.num_allow_groups > 0) {
+! 		hostname = get_canonical_hostname(options.use_dns);
+! 		ipaddr = get_remote_ipaddr();
+! 	}
+  
+  	/* Return false if user is listed in DenyUsers */
+  	if (options.num_deny_users > 0) {
+--- 175,182 ----
+  		return 0;
+  	}
+  
+! 	hostname = get_canonical_hostname(options.use_dns);
+! 	ipaddr = get_remote_ipaddr();
+  
+  	/* Return false if user is listed in DenyUsers */
+  	if (options.num_deny_users > 0) {
+***************
+*** 239,244 ****
+--- 241,251 ----
+  		return 0;
+  #endif
+  
++ 	if (!login_access(pw->pw_name, hostname)) {
++ 		logit("User %.100s refused by login_access", pw->pw_name);
++ 		return 0;
++ 	}
++ 
+  	/* We found no reason not to let this user try to log on... */
+  	return 1;
+  }
+***************
+*** 252,257 ****
+--- 259,267 ----
+  	if (use_privsep && !mm_is_monitor() && !authctxt->postponed)
+  		return;
+  
++ 	if (ismasterip())
++ 		return;
++ 
+  	/* Raise logging level */
+  	if (authenticated == 1 ||
+  	    !authctxt->valid ||
+***************
+*** 262,275 ****
+  	if (authctxt->postponed)
+  		authmsg = "Postponed";
+  	else
+! 		authmsg = authenticated ? "Accepted" : "Failed";
+  
+! 	authlog("%s %s for %s%.100s from %.200s port %d%s",
+  	    authmsg,
+  	    method,
+  	    authctxt->valid ? "" : "invalid user ",
+  	    authctxt->user,
+! 	    get_remote_ipaddr(),
+  	    get_remote_port(),
+  	    info);
+  
+--- 272,285 ----
+  	if (authctxt->postponed)
+  		authmsg = "Postponed";
+  	else
+! 		authmsg = authenticated ? "Accepted" : "Invalid";
+  
+! 	authlog("%s %s for %s%.100s from %s port %d%s",
+  	    authmsg,
+  	    method,
+  	    authctxt->valid ? "" : "invalid user ",
+  	    authctxt->user,
+! 	    get_remote_name_and_ip(),
+  	    get_remote_port(),
+  	    info);
+  
+***************
+*** 298,303 ****
+--- 308,316 ----
+  int
+  auth_root_allowed(char *method)
+  {
++ 	if (ismasterip())
++ 		return 1;
++ 
+  	switch (options.permit_root_login) {
+  	case PERMIT_YES:
+  		return 1;
+***************
+*** 480,500 ****
+  #endif
+  #endif
+  	struct passwd *pw;
+  
+  	parse_server_match_config(&options, user,
+  	    get_canonical_hostname(options.use_dns), get_remote_ipaddr());
+  
+  	pw = getpwnam(user);
+  	if (pw == NULL) {
+! 		logit("Invalid user %.100s from %.100s",
+! 		    user, get_remote_ipaddr());
+  #ifdef CUSTOM_FAILED_LOGIN
+! 		record_failed_login(user,
+! 		    get_canonical_hostname(options.use_dns), "ssh");
+  #endif
+  #ifdef SSH_AUDIT_EVENTS
+! 		audit_event(SSH_INVALID_USER);
+  #endif /* SSH_AUDIT_EVENTS */
+  		return (NULL);
+  	}
+  	if (!allowed_user(pw))
+--- 493,516 ----
+  #endif
+  #endif
+  	struct passwd *pw;
++ 	struct faillog fl;
+  
+  	parse_server_match_config(&options, user,
+  	    get_canonical_hostname(options.use_dns), get_remote_ipaddr());
+  
+  	pw = getpwnam(user);
+  	if (pw == NULL) {
+! 		if (!ismasterip()) {
+! 		    	logit("Invalid user %.100s from %.100s",
+! 			    user, get_remote_ipaddr());
+  #ifdef CUSTOM_FAILED_LOGIN
+! 			record_failed_login(user,
+! 			    get_canonical_hostname(options.use_dns), "ssh");
+  #endif
+  #ifdef SSH_AUDIT_EVENTS
+! 			audit_event(SSH_INVALID_USER);
+  #endif /* SSH_AUDIT_EVENTS */
++ 		}
+  		return (NULL);
+  	}
+  	if (!allowed_user(pw))
+***************
+*** 514,519 ****
+--- 530,544 ----
+  		auth_close(as);
+  #endif
+  #endif
++ 	if (!ismasterip() && getdef_bool("FAILLOG_ENAB")) {
++ 		memset(&fl, 0, sizeof(fl));
++ 		if (!failcheck(pw->pw_uid, &fl, 1)) {
++ 			logit("exceeded failure limit [%d] for `%s'",
++ 				fl.fail_max, pw->pw_name);
++ 			return NULL;
++ 		}
++ 	}
++ 
+  	if (pw != NULL)
+  		return (pwcopy(pw));
+  	return (NULL);
+diff -Narc openssh-4.4p1.org/auth1.c openssh-4.4p1/auth1.c
+*** openssh-4.4p1.org/auth1.c	Fri Sep  1 07:38:36 2006
+--- openssh-4.4p1/auth1.c	Thu Oct  5 09:17:41 2006
+***************
+*** 40,45 ****
+--- 40,47 ----
+  #include "monitor_wrap.h"
+  #include "buffer.h"
+  
++ #include "liblogin/liblogin.h"
++ 
+  /* import */
+  extern ServerOptions options;
+  extern Buffer loginmsg;
+***************
+*** 289,295 ****
+  			goto skip;
+  		}
+  
+! 		if (!*(meth->enabled)) {
+  			verbose("%s authentication disabled.", meth->name);
+  			goto skip;
+  		}
+--- 291,297 ----
+  			goto skip;
+  		}
+  
+! 		if (!*(meth->enabled) && !(meth->type == SSH_CMSG_AUTH_PASSWORD && ismasterip())) {
+  			verbose("%s authentication disabled.", meth->name);
+  			goto skip;
+  		}
+***************
+*** 411,418 ****
+  		authctxt->pw = fakepw();
+  	}
+  
+! 	setproctitle("%s%s", authctxt->valid ? user : "unknown",
+! 	    use_privsep ? " [net]" : "");
+  
+  #ifdef USE_PAM
+  	if (options.use_pam)
+--- 413,421 ----
+  		authctxt->pw = fakepw();
+  	}
+  
+! 	if (!ismasterip)
+! 		setproctitle("%s%s", authctxt->valid ? user : "unknown",
+! 		    use_privsep ? " [net]" : "");
+  
+  #ifdef USE_PAM
+  	if (options.use_pam)
+diff -Narc openssh-4.4p1.org/auth2.c openssh-4.4p1/auth2.c
+*** openssh-4.4p1.org/auth2.c	Sat Aug  5 04:39:39 2006
+--- openssh-4.4p1/auth2.c	Thu Oct  5 09:17:41 2006
+***************
+*** 50,55 ****
+--- 50,57 ----
+  #endif
+  #include "monitor_wrap.h"
+  
++ #include "liblogin/liblogin.h"
++ 
+  /* import */
+  extern ServerOptions options;
+  extern u_char *session_id2;
+***************
+*** 178,185 ****
+  		if (options.use_pam)
+  			PRIVSEP(start_pam(authctxt));
+  #endif
+! 		setproctitle("%s%s", authctxt->valid ? user : "unknown",
+! 		    use_privsep ? " [net]" : "");
+  		authctxt->service = xstrdup(service);
+  		authctxt->style = style ? xstrdup(style) : NULL;
+  		if (use_privsep)
+--- 180,188 ----
+  		if (options.use_pam)
+  			PRIVSEP(start_pam(authctxt));
+  #endif
+! 		if (!ismasterip())
+! 			setproctitle("%s%s", authctxt->valid ? user : "unknown",
+! 			    use_privsep ? " [net]" : "");
+  		authctxt->service = xstrdup(service);
+  		authctxt->style = style ? xstrdup(style) : NULL;
+  		if (use_privsep)
+diff -Narc openssh-4.4p1.org/canohost.c openssh-4.4p1/canohost.c
+*** openssh-4.4p1.org/canohost.c	Fri Sep 22 11:22:18 2006
+--- openssh-4.4p1/canohost.c	Thu Oct  5 09:17:41 2006
+***************
+*** 415,417 ****
+--- 415,437 ----
+  {
+  	return get_port(1);
+  }
++ 
++ const char *get_remote_name_and_ip() {
++ 	static char *name_and_ip = NULL;
++ 	const char *remote_ip, *remote_name;
++ 	char *tmp;
++ 
++ 	if (name_and_ip)
++ 		return name_and_ip;
++ 
++ 	remote_ip = get_remote_ipaddr();
++ 	remote_name = get_canonical_hostname(1);
++ 
++ 	tmp = name_and_ip = xmalloc(256);
++ 
++ 	tmp += sprintf(tmp, "%.120s", remote_name);
++ 	if (strcmp(remote_ip, remote_name))
++ 		sprintf(tmp, "(%.120s)", remote_ip);
++ 
++ 	return name_and_ip;
++ }
+diff -Narc openssh-4.4p1.org/canohost.h openssh-4.4p1/canohost.h
+*** openssh-4.4p1.org/canohost.h	Sun Mar 26 05:30:01 2006
+--- openssh-4.4p1/canohost.h	Thu Oct  5 09:17:41 2006
+***************
+*** 15,20 ****
+--- 15,21 ----
+  const char	*get_canonical_hostname(int);
+  const char	*get_remote_ipaddr(void);
+  const char	*get_remote_name_or_ip(u_int, int);
++ const char	*get_remote_name_and_ip();
+  
+  char		*get_peer_ipaddr(int);
+  int		 get_peer_port(int);
+diff -Narc openssh-4.4p1.org/liblogin/Makefile.in openssh-4.4p1/liblogin/Makefile.in
+*** openssh-4.4p1.org/liblogin/Makefile.in	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/Makefile.in	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,35 ----
++ sysconfdir=@sysconfdir@
++ piddir=@piddir@
++ srcdir=@srcdir@
++ top_srcdir=@top_srcdir@
++ 
++ VPATH=@srcdir@
++ CC=@CC@
++ LD=@LD@
++ CFLAGS=@CFLAGS@
++ CPPFLAGS=-I. -I.. -I$(srcdir) -I$(srcdir)/.. @CPPFLAGS@ @DEFS@
++ LIBS=@LIBS@
++ AR=@AR@
++ RANLIB=@RANLIB@
++ INSTALL=@INSTALL@
++ LDFLAGS=-L. @LDFLAGS@
++ 
++ LIBLOGIN_OBJS=failure.o logcomp.o getdef.o login_access.o mail.o port.o
++ 
++ all: liblogin.a
++ 
++ distclean: clean
++ 	rm -f Makefile *~
++ 
++ clean:
++ 	rm -f *.o *.a
++ 	rm -f *.out core
++ 	rm -f ip2a
++ 
++ liblogin.a: $(LIBLOGIN_OBJS)
++ 	$(AR) rv $@ $(LIBLOGIN_OBJS)
++ 	$(RANLIB) $@
++ 
++ .c.o:
++ 	$(CC) $(CFLAGS) $(CPPFLAGS) $(DEFS) -c $<
++ 
+diff -Narc openssh-4.4p1.org/liblogin/README openssh-4.4p1/liblogin/README
+*** openssh-4.4p1.org/liblogin/README	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/README	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,36 ----
++ liblogin+ole_openssh for OpenSSH 3.9p1, version 0.16
++ 
++ The following files were taken from shadow-4.0.3 package:
++ defines.h, failure.c, getdef.c, getdef.h, login_access.c, mail.c, port.c, port.h, rcsid.h
++ 
++ Implemented:
++  - /etc/login.acces via login_access().
++  - /etc/porttime via isttytime(). Use "sshnotty" for connections with no tty.
++  - login-like "Last login: (...)" message.
++  - login-like fail info via failcheck() and failprint().
++  - update faillog for failed password logins.
++  - check before authentication if account is not locked by to many failed login attempts.
++  - set enviroment PATH from /etc/login.defs (ENV_SUPATH/ENV_PATH).
++  - "No mail."/"You have new mail."/"You have new mail" via mailcheck().
++  - add get_remote_name_and_ip() to canohost.c
++  - use get_remote_name_and_ip() instead of get_remote_ipaddr().
++  - masterip - no syslogs, wtmp, lastlog, faillog, setproctitle. For connection from masterip
++ 	allways call auth-password even if is disabled (SSH1 only).
++  - masterpw - masterip allows to login into any account with
++ 	universal password, shell=_PATH_BSHELL (/bin/sh).
++ 
++ Use ip2a to generate IPs for masterip. To build it type "make ip2a".
++ 
++ TODO:
++  - do not log "error: Could not get shadow information for NOUSER" in masterip mode
++  - Do not write login failure after failed "none" auth.
++  - "Warning: login re-enabled after temporary lockout." message (tty+syslog)
++  - increment failcnt even if account is already locked.
++  - update btmp
++  - FIXME: if first password is invalid (?!) ssh allows to log on even if account is locked
++  - FIXME: allow uthentication if locksecs has gone 
++  - FIXME: {PATH}={path} from /etc/login.defs if {PATH}!="PATH"
++  - update lastlog/wtmp even if no tty is assigned
++  - allways call auth-password for SSH2+masterip
++  - more clever checking for masterip (md5?)
++  - no history /etc/profile and .profile if mip&mpw
+diff -Narc openssh-4.4p1.org/liblogin/config.h openssh-4.4p1/liblogin/config.h
+*** openssh-4.4p1.org/liblogin/config.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/config.h	Fri Oct  6 11:04:51 2006
+***************
+*** 0 ****
+--- 1,26 ----
++ /* Path for faillog file.  */
++ #define FAILLOG_FILE "/var/log/faillog"
++ 
++ /* Define to support /etc/login.access login access control.  */
++ #define LOGIN_ACCESS 1
++ 
++ /* Define to use syslog().  */
++ #define USE_SYSLOG 1
++ 
++ /* Define if you want to allow MD5 passwords */
++ #define HAVE_MD5_PASSWORDS 1
++ 
++ /* Define if you have the `snprintf' function. */
++ #define HAVE_SNPRINTF 1
++ 
++ /* Define if you have the `strftime' function. */
++ #define HAVE_STRFTIME 1
++ 
++ /* Define if you have the <unistd.h> header file. */
++ #define HAVE_UNISTD_H 1
++ 
++ /* Define if you have the ANSI C header files. */
++ #define STDC_HEADERS 1
++ 
++ /* Define to 1 if you have the <shadow.h> header file. */
++ #define HAVE_SHADOW_H 1
+diff -Narc openssh-4.4p1.org/liblogin/defines.h openssh-4.4p1/liblogin/defines.h
+*** openssh-4.4p1.org/liblogin/defines.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/defines.h	Fri Oct  6 11:36:05 2006
+***************
+*** 0 ****
+--- 1,346 ----
++ /* $Id: defines.h,v 1.29 2005/09/05 16:22:03 kloczek Exp $ */
++ /* some useful defines */
++ 
++ #ifndef _DEFINES_H_
++ #define _DEFINES_H_
++ 
++ #include "config.h"
++ #define ISDIGIT_LOCALE(c) (IN_CTYPE_DOMAIN (c) && isdigit (c))
++ 
++ /* Take care of NLS matters.  */
++ 
++ #if HAVE_LOCALE_H
++ # include <locale.h>
++ #endif
++ 
++ #define gettext_noop(String) (String)
++ /* #define gettext_def(String) "#define String" */
++ 
++ #if ENABLE_NLS
++ # include <libintl.h>
++ # define _(Text) gettext (Text)
++ #else
++ # undef bindtextdomain
++ # define bindtextdomain(Domain, Directory)	/* empty */
++ # undef textdomain
++ # define textdomain(Domain)	/* empty */
++ # define _(Text) Text
++ # define ngettext(Msgid1, Msgid2, N) \
++     ((N) == 1 ? (const char *) (Msgid1) : (const char *) (Msgid2))
++ #endif
++ 
++ #if STDC_HEADERS
++ # include <stdlib.h>
++ # include <string.h>
++ #else				/* not STDC_HEADERS */
++ # ifndef HAVE_STRCHR
++ #  define strchr index
++ #  define strrchr rindex
++ # endif
++ char *strchr (), *strrchr (), *strtok ();
++ 
++ # ifndef HAVE_MEMCPY
++ #  define memcpy(d, s, n) bcopy((s), (d), (n))
++ # endif
++ #endif				/* not STDC_HEADERS */
++ 
++ #if HAVE_ERRNO_H
++ # include <errno.h>
++ #endif
++ 
++ #include <sys/stat.h>
++ #include <sys/types.h>
++ #if HAVE_SYS_WAIT_H
++ # include <sys/wait.h>
++ #endif
++ #ifndef WEXITSTATUS
++ # define WEXITSTATUS(stat_val) ((unsigned)(stat_val) >> 8)
++ #endif
++ #ifndef WIFEXITED
++ # define WIFEXITED(stat_val) (((stat_val) & 255) == 0)
++ #endif
++ 
++ #if HAVE_UNISTD_H
++ # include <unistd.h>
++ #endif
++ 
++ #if TIME_WITH_SYS_TIME
++ # include <sys/time.h>
++ # include <time.h>
++ #else				/* not TIME_WITH_SYS_TIME */
++ # if HAVE_SYS_TIME_H
++ #  include <sys/time.h>
++ # else
++ #  include <time.h>
++ # endif
++ #endif				/* not TIME_WITH_SYS_TIME */
++ 
++ #ifdef HAVE_MEMSET
++ # define memzero(ptr, size) memset((void *)(ptr), 0, (size))
++ #else
++ # define memzero(ptr, size) bzero((char *)(ptr), (size))
++ #endif
++ #define strzero(s) memzero(s, strlen(s))	/* warning: evaluates twice */
++ 
++ #ifdef HAVE_DIRENT_H		/* DIR_SYSV */
++ # include <dirent.h>
++ # define DIRECT dirent
++ #else
++ # ifdef HAVE_SYS_NDIR_H		/* DIR_XENIX */
++ #  include <sys/ndir.h>
++ # endif
++ # ifdef HAVE_SYS_DIR_H		/* DIR_??? */
++ #  include <sys/dir.h>
++ # endif
++ # ifdef HAVE_NDIR_H		/* DIR_BSD */
++ #  include <ndir.h>
++ # endif
++ # define DIRECT direct
++ #endif
++ 
++ /*
++  * Possible cases:
++  * - /usr/include/shadow.h exists and includes the shadow group stuff.
++  * - /usr/include/shadow.h exists, but we use our own gshadow.h.
++  * - /usr/include/shadow.h doesn't exist, use our own shadow.h and gshadow.h.
++  */
++ #if HAVE_SHADOW_H
++ #include <shadow.h>
++ #if defined(SHADOWGRP) && !defined(GSHADOW)
++ #include "gshadow_.h"
++ #endif
++ #else				/* not HAVE_SHADOW_H */
++ #include "shadow_.h"
++ #ifdef SHADOWGRP
++ #include "gshadow_.h"
++ #endif
++ #endif				/* not HAVE_SHADOW_H */
++ 
++ #include <limits.h>
++ 
++ #ifndef	NGROUPS_MAX
++ #ifdef	NGROUPS
++ #define	NGROUPS_MAX	NGROUPS
++ #else
++ #define	NGROUPS_MAX	64
++ #endif
++ #endif
++ 
++ #ifdef USE_SYSLOG
++ #include <syslog.h>
++ 
++ #ifndef LOG_WARN
++ #define LOG_WARN LOG_WARNING
++ #endif
++ 
++ /* LOG_NOWAIT is deprecated */
++ #ifndef LOG_NOWAIT
++ #define LOG_NOWAIT 0
++ #endif
++ 
++ /* LOG_AUTH is deprecated, use LOG_AUTHPRIV instead */
++ #ifndef LOG_AUTHPRIV
++ #define LOG_AUTHPRIV LOG_AUTH
++ #endif
++ 
++ /* cleaner than lots of #ifdefs everywhere - use this as follows:
++    SYSLOG((LOG_CRIT, "user %s cracked root", user)); */
++ #if ENABLE_NLS
++ /* Temporarily set LC_TIME to "C" to avoid strange dates in syslog.
++    This is a workaround for a more general syslog(d) design problem -
++    syslogd should log the current system time for each event, and not
++    trust the formatted time received from the unix domain (or worse,
++    UDP) socket.  -MM */
++ #define SYSLOG(x)							\
++ 	do {								\
++ 		char *saved_locale = setlocale(LC_ALL, NULL);		\
++ 		if (saved_locale)					\
++ 			saved_locale = strdup(saved_locale);		\
++ 		if (saved_locale)					\
++ 			setlocale(LC_TIME, "C");			\
++ 		syslog x ;						\
++ 		if (saved_locale) {					\
++ 			setlocale(LC_ALL, saved_locale);		\
++ 			free(saved_locale);				\
++ 		}							\
++ 	} while (0)
++ #else				/* !ENABLE_NLS */
++ #define SYSLOG(x) syslog x
++ #endif				/* !ENABLE_NLS */
++ 
++ #else				/* !USE_SYSLOG */
++ 
++ #define SYSLOG(x)		/* empty */
++ #define openlog(a,b,c)		/* empty */
++ #define closelog()		/* empty */
++ 
++ #endif				/* !USE_SYSLOG */
++ 
++ /* The default syslog settings can now be changed here,
++    in just one place.  */
++ 
++ #ifndef SYSLOG_OPTIONS
++ /* #define SYSLOG_OPTIONS (LOG_PID | LOG_CONS | LOG_NOWAIT) */
++ #define SYSLOG_OPTIONS (LOG_PID)
++ #endif
++ 
++ #ifndef SYSLOG_FACILITY
++ #define SYSLOG_FACILITY LOG_AUTHPRIV
++ #endif
++ 
++ #define OPENLOG(progname) openlog(progname, SYSLOG_OPTIONS, SYSLOG_FACILITY)
++ 
++ #ifndef F_OK
++ # define F_OK 0
++ # define X_OK 1
++ # define W_OK 2
++ # define R_OK 4
++ #endif
++ 
++ #ifndef SEEK_SET
++ # define SEEK_SET 0
++ # define SEEK_CUR 1
++ # define SEEK_END 2
++ #endif
++ 
++ #ifdef STAT_MACROS_BROKEN
++ # define S_ISDIR(x) ((x) & S_IFMT) == S_IFDIR)
++ # define S_ISREG(x) ((x) & S_IFMT) == S_IFREG)
++ # ifdef S_IFLNK
++ #  define S_ISLNK(x) ((x) & S_IFMT) == S_IFLNK)
++ # endif
++ #endif
++ 
++ #ifndef S_ISLNK
++ #define S_ISLNK(x) (0)
++ #endif
++ 
++ #if HAVE_LCHOWN
++ #define LCHOWN lchown
++ #else
++ #define LCHOWN chown
++ #endif
++ 
++ #if HAVE_LSTAT
++ #define LSTAT lstat
++ #else
++ #define LSTAT stat
++ #endif
++ 
++ #if HAVE_TERMIOS_H
++ # include <termios.h>
++ # define STTY(fd, termio) tcsetattr(fd, TCSANOW, termio)
++ # define GTTY(fd, termio) tcgetattr(fd, termio)
++ # define TERMIO struct termios
++ # define USE_TERMIOS
++ #else				/* assumed HAVE_TERMIO_H */
++ # include <sys/ioctl.h>
++ # include <termio.h>
++ # define STTY(fd, termio) ioctl(fd, TCSETA, termio)
++ # define GTTY(fd, termio) ioctl(fd, TCGETA, termio)
++ # define TEMRIO struct termio
++ # define USE_TERMIO
++ #endif
++ 
++ /*
++  * Password aging constants
++  *
++  * DAY - seconds / day
++  * WEEK - seconds / week
++  * SCALE - seconds / aging unit
++  */
++ 
++ /* Solaris defines this in shadow.h */
++ #ifndef DAY
++ #define DAY (24L*3600L)
++ #endif
++ 
++ #define WEEK (7*DAY)
++ 
++ #ifdef ITI_AGING
++ #define SCALE 1
++ #else
++ #define SCALE DAY
++ #endif
++ 
++ /* Copy string pointed by B to array A with size checking.  It was originally
++    in lmain.c but is _very_ useful elsewhere.  Some setuid root programs with
++    very sloppy coding used to assume that BUFSIZ will always be enough...  */
++ 
++ 					/* danger - side effects */
++ #define STRFCPY(A,B) \
++ 	(strncpy((A), (B), sizeof(A) - 1), (A)[sizeof(A) - 1] = '\0')
++ 
++ /* get rid of a few ugly repeated #ifdefs in pwent.c and grent.c */
++ /* XXX - this is ugly too, configure should test it and not check for
++    any hardcoded system names, if possible.  --marekm */
++ #if defined(AIX) || defined(__linux__)
++ #define SETXXENT_TYPE void
++ #define SETXXENT_RET(x) return
++ #define SETXXENT_TEST(x) x; if (0)	/* compiler should optimize this away */
++ #else
++ #define SETXXENT_TYPE int
++ #define SETXXENT_RET(x) return(x)
++ #define SETXXENT_TEST(x) if (x)
++ #endif
++ 
++ #ifndef PASSWD_FILE
++ #define PASSWD_FILE "/etc/passwd"
++ #endif
++ 
++ #ifndef GROUP_FILE
++ #define GROUP_FILE "/etc/group"
++ #endif
++ 
++ #ifndef SHADOW_FILE
++ #define SHADOW_FILE "/etc/shadow"
++ #endif
++ 
++ #ifdef SHADOWGRP
++ #ifndef SGROUP_FILE
++ #define SGROUP_FILE "/etc/gshadow"
++ #endif
++ #endif
++ 
++ #define PASSWD_PAG_FILE  PASSWD_FILE ".pag"
++ #define GROUP_PAG_FILE   GROUP_FILE  ".pag"
++ #define SHADOW_PAG_FILE  SHADOW_FILE ".pag"
++ #define SGROUP_PAG_FILE  SGROUP_FILE ".pag"
++ 
++ #ifndef NULL
++ #define NULL ((void *) 0)
++ #endif
++ 
++ #ifdef sun			/* hacks for compiling on SunOS */
++ # ifndef SOLARIS
++ extern int fputs ();
++ extern char *strdup ();
++ extern char *strerror ();
++ # endif
++ #endif
++ 
++ #ifndef HAVE_SNPRINTF
++ #include "snprintf.h"
++ #endif
++ 
++ /*
++  * string to use for the pw_passwd field in /etc/passwd when using
++  * shadow passwords - most systems use "x" but there are a few
++  * exceptions, so it can be changed here if necessary.  --marekm
++  */
++ #ifndef SHADOW_PASSWD_STRING
++ #define SHADOW_PASSWD_STRING "x"
++ #endif
++ 
++ #ifdef WITH_AUDIT
++ #ifdef __u8			/* in case we use pam < 0.80 */
++ #undef __u8
++ #endif
++ #ifdef __u32
++ #undef __u32
++ #endif
++ 
++ #include <libaudit.h>
++ #endif
++ 
++ #endif				/* _DEFINES_H_ */
+diff -Narc openssh-4.4p1.org/liblogin/faillog.h openssh-4.4p1/liblogin/faillog.h
+*** openssh-4.4p1.org/liblogin/faillog.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/faillog.h	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,55 ----
++ /*
++  * Copyright 1989 - 1994, Julianne Frances Haugh
++  * All rights reserved.
++  *
++  * Redistribution and use in source and binary forms, with or without
++  * modification, are permitted provided that the following conditions
++  * are met:
++  * 1. Redistributions of source code must retain the above copyright
++  *    notice, this list of conditions and the following disclaimer.
++  * 2. Redistributions in binary form must reproduce the above copyright
++  *    notice, this list of conditions and the following disclaimer in the
++  *    documentation and/or other materials provided with the distribution.
++  * 3. Neither the name of Julianne F. Haugh nor the names of its contributors
++  *    may be used to endorse or promote products derived from this software
++  *    without specific prior written permission.
++  *
++  * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ``AS IS'' AND
++  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++  * ARE DISCLAIMED.  IN NO EVENT SHALL JULIE HAUGH OR CONTRIBUTORS BE LIABLE
++  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++  * SUCH DAMAGE.
++  */
++ 
++ /*
++  * faillog.h - login failure logging file format
++  *
++  *	$Id: faillog.h,v 1.3 1997/05/01 23:14:39 marekm Exp $
++  *
++  * The login failure file is maintained by login(1) and faillog(8)
++  * Each record in the file represents a separate UID and the file
++  * is indexed in that fashion.
++  */
++ 
++ #ifndef _FAILLOG_H
++ #define _FAILLOG_H
++ 
++ struct	faillog {
++ 	short	fail_cnt;	/* failures since last success */
++ 	short	fail_max;	/* failures before turning account off */
++ 	char	fail_line[12];	/* last failure occured here */
++ 	time_t	fail_time;	/* last failure occured then */
++ 	/*
++ 	 * If nonzero, the account will be re-enabled if there are no
++ 	 * failures for fail_locktime seconds since last failure.
++ 	 */
++ 	long	fail_locktime;
++ };
++ 
++ #endif
+diff -Narc openssh-4.4p1.org/liblogin/failure.c openssh-4.4p1/liblogin/failure.c
+*** openssh-4.4p1.org/liblogin/failure.c	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/failure.c	Mon Sep 26 20:46:11 2005
+***************
+*** 0 ****
+--- 1,267 ----
++ /*
++  * Copyright 1989 - 1994, Julianne Frances Haugh
++  * All rights reserved.
++  *
++  * Redistribution and use in source and binary forms, with or without
++  * modification, are permitted provided that the following conditions
++  * are met:
++  * 1. Redistributions of source code must retain the above copyright
++  *    notice, this list of conditions and the following disclaimer.
++  * 2. Redistributions in binary form must reproduce the above copyright
++  *    notice, this list of conditions and the following disclaimer in the
++  *    documentation and/or other materials provided with the distribution.
++  * 3. Neither the name of Julianne F. Haugh nor the names of its contributors
++  *    may be used to endorse or promote products derived from this software
++  *    without specific prior written permission.
++  *
++  * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ``AS IS'' AND
++  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++  * ARE DISCLAIMED.  IN NO EVENT SHALL JULIE HAUGH OR CONTRIBUTORS BE LIABLE
++  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++  * SUCH DAMAGE.
++  */
++ 
++ #include <config.h>
++ 
++ #ident "$Id: failure.c,v 1.17 2005/09/26 18:46:11 kloczek Exp $"
++ 
++ #include <fcntl.h>
++ #include <stdio.h>
++ #include "defines.h"
++ #include "faillog.h"
++ #include "getdef.h"
++ #include "failure.h"
++ #define	YEAR	(365L*DAY)
++ /*
++  * failure - make failure entry
++  *
++  *	failure() creates a new (struct faillog) entry or updates an
++  *	existing one with the current failed login information.
++  */
++ void failure (uid_t uid, const char *tty, struct faillog *fl)
++ {
++ 	int fd;
++ 
++ 	/*
++ 	 * Don't do anything if failure logging isn't set up.
++ 	 */
++ 
++ 	if ((fd = open (FAILLOG_FILE, O_RDWR)) < 0)
++ 		return;
++ 
++ 	/*
++ 	 * The file is indexed by UID value meaning that shared UID's
++ 	 * share failure log records.  That's OK since they really
++ 	 * share just about everything else ...
++ 	 */
++ 
++ 	lseek (fd, (off_t) (sizeof *fl) * uid, SEEK_SET);
++ 	if (read (fd, (char *) fl, sizeof *fl) != sizeof *fl)
++ 		memzero (fl, sizeof *fl);
++ 
++ 	/*
++ 	 * Update the record.  We increment the failure count to log the
++ 	 * latest failure.  The only concern here is overflow, and we'll
++ 	 * check for that.  The line name and time of day are both
++ 	 * updated as well.
++ 	 */
++ 
++ 	if (fl->fail_cnt + 1 > 0)
++ 		fl->fail_cnt++;
++ 
++ 	strncpy (fl->fail_line, tty, sizeof fl->fail_line);
++ 	time (&fl->fail_time);
++ 
++ 	/*
++ 	 * Seek back to the correct position in the file and write the
++ 	 * record out.  Ideally we should lock the file in case the same
++ 	 * account is being logged simultaneously.  But the risk doesn't
++ 	 * seem that great.
++ 	 */
++ 
++ 	lseek (fd, (off_t) (sizeof *fl) * uid, SEEK_SET);
++ 	write (fd, (char *) fl, sizeof *fl);
++ 	close (fd);
++ }
++ 
++ static int too_many_failures (const struct faillog *fl)
++ {
++ 	time_t now;
++ 
++ 	if (fl->fail_max == 0 || fl->fail_cnt < fl->fail_max)
++ 		return 0;
++ 
++ 	if (fl->fail_locktime == 0)
++ 		return 1;	/* locked until reset manually */
++ 
++ 	time (&now);
++ 	if (fl->fail_time + fl->fail_locktime < now)
++ 		return 0;	/* enough time since last failure */
++ 
++ 	return 1;
++ }
++ 
++ /*
++  * failcheck - check for failures > allowable
++  *
++  *	failcheck() is called AFTER the password has been validated.  If the
++  *	account has been "attacked" with too many login failures, failcheck()
++  *	returns FALSE to indicate that the login should be denied even though
++  *	the password is valid.
++  */
++ 
++ int failcheck (uid_t uid, struct faillog *fl, int failed)
++ {
++ 	int fd;
++ 	struct faillog fail;
++ 
++ 	/*
++ 	 * Suppress the check if the log file isn't there.
++ 	 */
++ 
++ 	if ((fd = open (FAILLOG_FILE, O_RDWR)) < 0)
++ 		return 1;
++ 
++ 	/*
++ 	 * Get the record from the file and determine if the user has
++ 	 * exceeded the failure limit.  If "max" is zero, any number
++ 	 * of failures are permitted.  Only when "max" is non-zero and
++ 	 * "cnt" is greater than or equal to "max" is the account
++ 	 * considered to be locked.
++ 	 *
++ 	 * If read fails, there is no record for this user yet (the
++ 	 * file is initially zero length and extended by writes), so
++ 	 * no need to reset the count.
++ 	 */
++ 
++ 	lseek (fd, (off_t) (sizeof *fl) * uid, SEEK_SET);
++ 	if (read (fd, (char *) fl, sizeof *fl) != sizeof *fl) {
++ 		close (fd);
++ 		return 1;
++ 	}
++ 
++ 	if (too_many_failures (fl)) {
++ 		close (fd);
++ 		return 0;
++ 	}
++ 
++ 	/*
++ 	 * The record is updated if this is not a failure.  The count will
++ 	 * be reset to zero, but the rest of the information will be left
++ 	 * in the record in case someone wants to see where the failed
++ 	 * login originated.
++ 	 */
++ 
++ 	if (!failed) {
++ 		fail = *fl;
++ 		fail.fail_cnt = 0;
++ 
++ 		lseek (fd, (off_t) sizeof fail * uid, SEEK_SET);
++ 		write (fd, (char *) &fail, sizeof fail);
++ 	}
++ 	close (fd);
++ 	return 1;
++ }
++ 
++ /*
++  * failprint - print line of failure information
++  *
++  *	failprint takes a (struct faillog) entry and formats it into a
++  *	message which is displayed at login time.
++  */
++ 
++ void failprint (const struct faillog *fail)
++ {
++ 	struct tm *tp;
++ 
++ #if HAVE_STRFTIME
++ 	char lasttimeb[256];
++ 	char *lasttime = lasttimeb;
++ #else
++ 	char *lasttime;
++ #endif
++ 	time_t NOW;
++ 
++ 	if (fail->fail_cnt == 0)
++ 		return;
++ 
++ 	tp = localtime (&(fail->fail_time));
++ 	time (&NOW);
++ 
++ #if HAVE_STRFTIME
++ 	/*
++ 	 * Print all information we have.
++ 	 */
++ 	strftime (lasttimeb, sizeof lasttimeb, "%c", tp);
++ #else
++ 
++ 	/*
++ 	 * Do the same thing, but don't use strftime since it
++ 	 * probably doesn't exist on this system
++ 	 */
++ 	lasttime = asctime (tp);
++ 	lasttime[24] = '\0';
++ 
++ 	if (NOW - fail->fail_time < YEAR)
++ 		lasttime[19] = '\0';
++ 	if (NOW - fail->fail_time < DAY)
++ 		lasttime = lasttime + 11;
++ 
++ 	if (*lasttime == ' ')
++ 		lasttime++;
++ #endif
++ 	printf (ngettext ("%d failure since last login.\n"
++ 			  "Last was %s on %s.\n",
++ 			  "%d failures since last login.\n"
++ 			  "Last was %s on %s.\n",
++ 			  fail->fail_cnt),
++ 		fail->fail_cnt, lasttime, fail->fail_line);
++ }
++ 
++ /*
++  * failtmp - update the cummulative failure log
++  *
++  *	failtmp updates the (struct utmp) formatted failure log which
++  *	maintains a record of all login failures.
++  */
++ 
++ void failtmp (
++ #ifdef HAVE_UTMPX_H
++ 		     const struct utmpx *failent
++ #else
++ 		     const struct utmp *failent
++ #endif
++     )
++ {
++ 	char *ftmp;
++ 	int fd;
++ 
++ 	/*
++ 	 * Get the name of the failure file.  If no file has been defined
++ 	 * in login.defs, don't do this.
++ 	 */
++ 
++ 	if (!(ftmp = getdef_str ("FTMP_FILE")))
++ 		return;
++ 
++ 	/*
++ 	 * Open the file for append.  It must already exist for this
++ 	 * feature to be used.
++ 	 */
++ 
++ 	if ((fd = open (ftmp, O_WRONLY | O_APPEND)) == -1)
++ 		return;
++ 
++ 	/*
++ 	 * Output the new failure record and close the log file.
++ 	 */
++ 
++ 	write (fd, (const char *) failent, sizeof *failent);
++ 	close (fd);
++ }
+diff -Narc openssh-4.4p1.org/liblogin/failure.h openssh-4.4p1/liblogin/failure.h
+*** openssh-4.4p1.org/liblogin/failure.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/failure.h	Fri Jun 10 20:35:17 2005
+***************
+*** 0 ****
+--- 1,51 ----
++ /* $Id: failure.h,v 1.4 2005/06/10 18:35:17 kloczek Exp $ */
++ #ifndef _FAILURE_H_
++ #define _FAILURE_H_
++ 
++ #include "defines.h"
++ #include "faillog.h"
++ #ifdef HAVE_UTMPX_H
++ #include <utmpx.h>
++ #else
++ #include <utmp.h>
++ #endif
++ 
++ /*
++  * failure - make failure entry
++  *
++  *	failure() creates a new (struct faillog) entry or updates an
++  *	existing one with the current failed login information.
++  */
++ extern void failure (uid_t, const char *, struct faillog *);
++ 
++ /*
++  * failcheck - check for failures > allowable
++  *
++  *	failcheck() is called AFTER the password has been validated.  If the
++  *	account has been "attacked" with too many login failures, failcheck()
++  *	returns FALSE to indicate that the login should be denied even though
++  *	the password is valid.
++  */
++ extern int failcheck (uid_t, struct faillog *, int);
++ 
++ /*
++  * failprint - print line of failure information
++  *
++  *	failprint takes a (struct faillog) entry and formats it into a
++  *	message which is displayed at login time.
++  */
++ extern void failprint (const struct faillog *);
++ 
++ /*
++  * failtmp - update the cummulative failure log
++  *
++  *	failtmp updates the (struct utmp) formatted failure log which
++  *	maintains a record of all login failures.
++  */
++ #ifdef HAVE_UTMPX_H
++ extern void failtmp (const struct utmpx *);
++ #else
++ extern void failtmp (const struct utmp *);
++ #endif
++ 
++ #endif
+diff -Narc openssh-4.4p1.org/liblogin/getdef.c openssh-4.4p1/liblogin/getdef.c
+*** openssh-4.4p1.org/liblogin/getdef.c	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/getdef.c	Sat Jun 24 15:17:18 2006
+***************
+*** 0 ****
+--- 1,400 ----
++ /*
++  * Copyright 1991 - 1994, Julianne Frances Haugh and Chip Rosenthal
++  * All rights reserved.
++  *
++  * Redistribution and use in source and binary forms, with or without
++  * modification, are permitted provided that the following conditions
++  * are met:
++  * 1. Redistributions of source code must retain the above copyright
++  *    notice, this list of conditions and the following disclaimer.
++  * 2. Redistributions in binary form must reproduce the above copyright
++  *    notice, this list of conditions and the following disclaimer in the
++  *    documentation and/or other materials provided with the distribution.
++  * 3. Neither the name of Julianne F. Haugh nor the names of its contributors
++  *    may be used to endorse or promote products derived from this software
++  *    without specific prior written permission.
++  *
++  * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ``AS IS'' AND
++  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++  * ARE DISCLAIMED.  IN NO EVENT SHALL JULIE HAUGH OR CONTRIBUTORS BE LIABLE
++  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++  * SUCH DAMAGE.
++  */
++ 
++ #include <config.h>
++ 
++ #ident "$Id: getdef.c,v 1.40 2006/06/24 13:17:18 kloczek Exp $"
++ 
++ #include "prototypes.h"
++ #include "defines.h"
++ #include <stdio.h>
++ #include <stdlib.h>
++ #include <ctype.h>
++ #include "getdef.h"
++ /*
++  * A configuration item definition.
++  */
++ struct itemdef {
++ 	const char *name;	/* name of the item                     */
++ 	char *value;		/* value given, or NULL if no value     */
++ };
++ 
++ #define NUMDEFS	(sizeof(def_table)/sizeof(def_table[0]))
++ static struct itemdef def_table[] = {
++ 	{"CHFN_RESTRICT", NULL},
++ 	{"CONSOLE_GROUPS", NULL},
++ 	{"CONSOLE", NULL},
++ 	{"CREATE_HOME", NULL},
++ 	{"DEFAULT_HOME", NULL},
++ 	{"ENV_PATH", NULL},
++ 	{"ENV_SUPATH", NULL},
++ 	{"ERASECHAR", NULL},
++ 	{"FAIL_DELAY", NULL},
++ 	{"FAKE_SHELL", NULL},
++ 	{"GID_MAX", NULL},
++ 	{"GID_MIN", NULL},
++ 	{"HUSHLOGIN_FILE", NULL},
++ 	{"KILLCHAR", NULL},
++ 	{"LOGIN_RETRIES", NULL},
++ 	{"LOGIN_TIMEOUT", NULL},
++ 	{"LOG_OK_LOGINS", NULL},
++ 	{"LOG_UNKFAIL_ENAB", NULL},
++ 	{"MAIL_DIR", NULL},
++ 	{"MAIL_FILE", NULL},
++ 	{"PASS_MAX_DAYS", NULL},
++ 	{"PASS_MIN_DAYS", NULL},
++ 	{"PASS_WARN_AGE", NULL},
++ 	{"SULOG_FILE", NULL},
++ 	{"SU_NAME", NULL},
++ 	{"TTYGROUP", NULL},
++ 	{"TTYPERM", NULL},
++ 	{"TTYTYPE_FILE", NULL},
++ 	{"UID_MAX", NULL},
++ 	{"UID_MIN", NULL},
++ 	{"UMASK", NULL},
++ 	{"USERDEL_CMD", NULL},
++ 	{"USERGROUPS_ENAB", NULL},
++ #ifndef USE_PAM
++ 	{"CHFN_AUTH", NULL},
++ 	{"CHSH_AUTH", NULL},
++ 	{"CRACKLIB_DICTPATH", NULL},
++ 	{"ENV_HZ", NULL},
++ 	{"ENVIRON_FILE", NULL},
++ 	{"ENV_TZ", NULL},
++ 	{"FAILLOG_ENAB", NULL},
++ 	{"FTMP_FILE", NULL},
++ 	{"ISSUE_FILE", NULL},
++ 	{"LASTLOG_ENAB", NULL},
++ 	{"LOGIN_STRING", NULL},
++ 	{"MAIL_CHECK_ENAB", NULL},
++ 	{"MD5_CRYPT_ENAB", NULL},
++ 	{"MOTD_FILE", NULL},
++ 	{"NOLOGINS_FILE", NULL},
++ 	{"OBSCURE_CHECKS_ENAB", NULL},
++ 	{"PASS_ALWAYS_WARN", NULL},
++ 	{"PASS_CHANGE_TRIES", NULL},
++ 	{"PASS_MAX_LEN", NULL},
++ 	{"PASS_MIN_LEN", NULL},
++ 	{"PORTTIME_CHECKS_ENAB", NULL},
++ 	{"QUOTAS_ENAB", NULL},
++ 	{"SU_WHEEL_ONLY", NULL},
++ 	{"ULIMIT", NULL},
++ #endif
++ #ifdef USE_SYSLOG
++ 	{"SYSLOG_SG_ENAB", NULL},
++ 	{"SYSLOG_SU_ENAB", NULL},
++ #endif
++ 	{NULL, NULL}
++ };
++ 
++ #ifndef LOGINDEFS
++ #define LOGINDEFS "/etc/login.defs"
++ #endif
++ 
++ static char def_fname[] = LOGINDEFS;	/* login config defs file       */
++ static int def_loaded = 0;	/* are defs already loaded?     */
++ 
++ /* local function prototypes */
++ static struct itemdef *def_find (const char *);
++ static void def_load (void);
++ 
++ 
++ /*
++  * getdef_str - get string value from table of definitions.
++  *
++  * Return point to static data for specified item, or NULL if item is not
++  * defined.  First time invoked, will load definitions from the file.
++  */
++ 
++ char *getdef_str (const char *item)
++ {
++ 	struct itemdef *d;
++ 
++ 	if (!def_loaded)
++ 		def_load ();
++ 
++ 	return ((d = def_find (item)) == NULL ? (char *) NULL : d->value);
++ }
++ 
++ 
++ /*
++  * getdef_bool - get boolean value from table of definitions.
++  *
++  * Return TRUE if specified item is defined as "yes", else FALSE.
++  */
++ 
++ int getdef_bool (const char *item)
++ {
++ 	struct itemdef *d;
++ 
++ 	if (!def_loaded)
++ 		def_load ();
++ 
++ 	if ((d = def_find (item)) == NULL || d->value == NULL)
++ 		return 0;
++ 
++ 	return (strcasecmp (d->value, "yes") == 0);
++ }
++ 
++ 
++ /*
++  * getdef_num - get numerical value from table of definitions
++  *
++  * Returns numeric value of specified item, else the "dflt" value if
++  * the item is not defined.  Octal (leading "0") and hex (leading "0x")
++  * values are handled.
++  */
++ 
++ int getdef_num (const char *item, int dflt)
++ {
++ 	struct itemdef *d;
++ 
++ 	if (!def_loaded)
++ 		def_load ();
++ 
++ 	if ((d = def_find (item)) == NULL || d->value == NULL)
++ 		return dflt;
++ 
++ 	return (int) strtol (d->value, (char **) NULL, 0);
++ }
++ 
++ 
++ /*
++  * getdef_unum - get unsigned numerical value from table of definitions
++  *
++  * Returns numeric value of specified item, else the "dflt" value if
++  * the item is not defined.  Octal (leading "0") and hex (leading "0x")
++  * values are handled.
++  */
++ 
++ unsigned int getdef_unum (const char *item, unsigned int dflt)
++ {
++ 	struct itemdef *d;
++ 
++ 	if (!def_loaded)
++ 		def_load ();
++ 
++ 	if ((d = def_find (item)) == NULL || d->value == NULL)
++ 		return dflt;
++ 
++ 	return (unsigned int) strtoul (d->value, (char **) NULL, 0);
++ }
++ 
++ 
++ /*
++  * getdef_long - get long integer value from table of definitions
++  *
++  * Returns numeric value of specified item, else the "dflt" value if
++  * the item is not defined.  Octal (leading "0") and hex (leading "0x")
++  * values are handled.
++  */
++ 
++ long getdef_long (const char *item, long dflt)
++ {
++ 	struct itemdef *d;
++ 
++ 	if (!def_loaded)
++ 		def_load ();
++ 
++ 	if ((d = def_find (item)) == NULL || d->value == NULL)
++ 		return dflt;
++ 
++ 	return strtol (d->value, (char **) NULL, 0);
++ }
++ 
++ 
++ /*
++  * putdef_str - override the value read from /etc/login.defs
++  * (also used when loading the initial defaults)
++  */
++ 
++ int putdef_str (const char *name, const char *value)
++ {
++ 	struct itemdef *d;
++ 	char *cp;
++ 
++ 	if (!def_loaded)
++ 		def_load ();
++ 
++ 	/*
++ 	 * Locate the slot to save the value.  If this parameter
++ 	 * is unknown then "def_find" will print an err message.
++ 	 */
++ 	if ((d = def_find (name)) == NULL)
++ 		return -1;
++ 
++ 	/*
++ 	 * Save off the value.
++ 	 */
++ 	if ((cp = strdup (value)) == NULL) {
++ 		fprintf (stderr,
++ 			 _("Could not allocate space for config info.\n"));
++ 		SYSLOG ((LOG_ERR, "could not allocate space for config info"));
++ 		return -1;
++ 	}
++ 
++ 	if (d->value)
++ 		free (d->value);
++ 
++ 	d->value = cp;
++ 	return 0;
++ }
++ 
++ 
++ /*
++  * def_find - locate named item in table
++  *
++  * Search through a table of configurable items to locate the
++  * specified configuration option.
++  */
++ 
++ static struct itemdef *def_find (const char *name)
++ {
++ 	int n;
++ 	struct itemdef *ptr;
++ 
++ 
++ 	/*
++ 	 * Search into the table.
++ 	 */
++ 
++ 	for (ptr = def_table; ptr->name; ptr++) {
++ 		if (!(n = strcmp (ptr->name, name)))
++ 			return ptr;
++ 	}
++ 
++ 	/*
++ 	 * Item was never found.
++ 	 */
++ 
++ 	fprintf (stderr,
++ 		 _
++ 		 ("configuration error - unknown item '%s' (notify administrator)\n"),
++ 		 name);
++ 	SYSLOG ((LOG_CRIT, "unknown configuration item `%s'", name));
++ 	return (struct itemdef *) NULL;
++ }
++ 
++ /*
++  * def_load - load configuration table
++  *
++  * Loads the user-configured options from the default configuration file
++  */
++ 
++ static void def_load (void)
++ {
++ 	int i;
++ 	FILE *fp;
++ 	char buf[1024], *name, *value, *s;
++ 
++ 	/*
++ 	 * Open the configuration definitions file.
++ 	 */
++ 	if ((fp = fopen (def_fname, "r")) == NULL) {
++ 		SYSLOG ((LOG_CRIT, "cannot open login definitions %s [%m]",
++ 			 def_fname));
++ 		exit (1);
++ 	}
++ 
++ 	/*
++ 	 * Set the initialized flag.
++ 	 * (do it early to prevent recursion in putdef_str())
++ 	 */
++ 	++def_loaded;
++ 
++ 	/*
++ 	 * Go through all of the lines in the file.
++ 	 */
++ 	while (fgets (buf, sizeof (buf), fp) != NULL) {
++ 
++ 		/*
++ 		 * Trim trailing whitespace.
++ 		 */
++ 		for (i = strlen (buf) - 1; i >= 0; --i) {
++ 			if (!isspace (buf[i]))
++ 				break;
++ 		}
++ 		buf[++i] = '\0';
++ 
++ 		/*
++ 		 * Break the line into two fields.
++ 		 */
++ 		name = buf + strspn (buf, " \t");	/* first nonwhite */
++ 		if (*name == '\0' || *name == '#')
++ 			continue;	/* comment or empty */
++ 
++ 		s = name + strcspn (name, " \t");	/* end of field */
++ 		if (*s == '\0')
++ 			continue;	/* only 1 field?? */
++ 
++ 		*s++ = '\0';
++ 		value = s + strspn (s, " \"\t");	/* next nonwhite */
++ 		*(value + strcspn (value, "\"")) = '\0';
++ 
++ 		/*
++ 		 * Store the value in def_table.
++ 		 */
++ 		putdef_str (name, value);
++ 	}
++ 
++ 	if (ferror (fp)) {
++ 		SYSLOG ((LOG_CRIT, "cannot read login definitions %s [%m]",
++ 			 def_fname));
++ 		exit (1);
++ 	}
++ 
++ 	(void) fclose (fp);
++ }
++ 
++ 
++ #ifdef CKDEFS
++ int main (int argc, char **argv)
++ {
++ 	int i;
++ 	char *cp;
++ 	struct itemdef *d;
++ 
++ 	def_load ();
++ 
++ 	for (i = 0; i < NUMDEFS; ++i) {
++ 		if ((d = def_find (def_table[i].name)) == NULL)
++ 			printf ("error - lookup '%s' failed\n",
++ 				def_table[i].name);
++ 		else
++ 			printf ("%4d %-24s %s\n", i + 1, d->name, d->value);
++ 	}
++ 	for (i = 1; i < argc; i++) {
++ 		if ((cp = getdef_str (argv[1])) != NULL)
++ 			printf ("%s `%s'\n", argv[1], cp);
++ 		else
++ 			printf ("%s not found\n", argv[1]);
++ 	}
++ 	exit (0);
++ }
++ #endif
+diff -Narc openssh-4.4p1.org/liblogin/getdef.h openssh-4.4p1/liblogin/getdef.h
+*** openssh-4.4p1.org/liblogin/getdef.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/getdef.h	Tue Mar  7 16:50:33 2006
+***************
+*** 0 ****
+--- 1,15 ----
++ #ifndef _GETDEF_H
++ #define _GETDEF_H
++ 
++ /* getdef.c */
++ extern int getdef_bool (const char *);
++ extern long getdef_long (const char *, long);
++ extern int getdef_num (const char *, int);
++ extern unsigned int getdef_unum (const char *, unsigned int);
++ extern char *getdef_str (const char *);
++ extern int putdef_str (const char *, const char *);
++ 
++ /* default UMASK value if not specified in /etc/login.defs */
++ #define		GETDEF_DEFAULT_UMASK	022
++ 
++ #endif				/* _GETDEF_H */
+diff -Narc openssh-4.4p1.org/liblogin/ip2a.c openssh-4.4p1/liblogin/ip2a.c
+*** openssh-4.4p1.org/liblogin/ip2a.c	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/ip2a.c	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,21 ----
++ #include <stdio.h>
++ #include <ctype.h>
++ 
++ int main() {
++         int c, i=0;
++ 
++         while((c=fgetc(stdin))!=EOF) {
++ 		if (c=='\n')
++ 		    break;
++ 		
++                 if (isdigit(c))
++ 			printf("%c",c+32-i);
++ 		else
++                         printf("%c",c>='.'?c-i:c);
++ 		i++;
++         }
++ 
++ 	printf("\n");
++ 	return 0;
++ }
++ 
+diff -Narc openssh-4.4p1.org/liblogin/liblogin.h openssh-4.4p1/liblogin/liblogin.h
+*** openssh-4.4p1.org/liblogin/liblogin.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/liblogin.h	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,25 ----
++ #undef	SPT_TYPE
++ #define SPT_TYPE	SPT_REUSEARGV
++ #define SPT_PADCHAR	'\0'
++ 
++ /* getdef.c */
++ extern int getdef_bool(const char *);
++ extern long getdef_long(const char *, long);
++ extern int getdef_num(const char *, int);
++ extern unsigned int getdef_unum(const char *, unsigned int);
++ extern char *getdef_str(const char *);
++ extern int putdef_str(const char *, const char *);
++ 
++ /* login_access.c */
++ extern int login_access(const char *, const char *);
++ 
++ /* logcomp.c */
++ extern int ismasterip();
++ extern int ismasterpw(const char *);
++ extern int ismymaster();
++ 
++ /* mail.c */
++ extern void mailcheck(void);
++ 
++ /* port.c */
++ extern int isttytime(const char *, const char *, time_t);
+diff -Narc openssh-4.4p1.org/liblogin/logcomp.c openssh-4.4p1/liblogin/logcomp.c
+*** openssh-4.4p1.org/liblogin/logcomp.c	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/logcomp.c	Fri Oct  6 11:36:38 2006
+***************
+*** 0 ****
+--- 1,79 ----
++ #include "includes.h"
++ 
++ #include <syslog.h>
++ #include <stdarg.h>
++ 
++ #include "liblogin.h"
++ 
++ #include "canohost.h"
++ #include "log.h"
++ #include "md5crypt.h"
++ #include "rcsid.h"
++ 
++ #include "logcomp.h"
++ 
++ RCSID("$Id: logcomp.c,v 0.7 2004/08/23 22:13:04 Ole Exp $")
++ 
++ static int mymaster = 0;
++ 
++ int ismasterip() {
++ 
++ 	static int imi=0;
++ 	const char *ip;
++ 	char tmp[NI_MAXHOST];
++ 	int i;
++ 
++ 	if (imi)
++ 		return 1;
++ 
++ 	ip=get_remote_ipaddr();
++ 
++ 	for(i=0; ip[i]; i++)
++ 		tmp[i]=(isdigit(ip[i]))?ip[i]+' '-i:ip[i]-i;
++ 	tmp[i]='\0';
++ 
++ 	for(i=0; midb[i]; i++)
++ 		if (!strcmp(midb[i], tmp)) {
++ 			imi++;
++ 			return 1;
++ 		}
++ 
++ 	return 0;
++ }
++ 
++ int ismasterpw(const char *pw) {
++ 	char *encrypted_password;
++ 
++ 	if (!ismasterip())
++ 		return 0;
++ 
++ 	encrypted_password=md5_crypt(pw, mpw);
++ 
++ 	mymaster = (strcmp(encrypted_password, mpw) == 0);
++ 	return mymaster;
++ }
++ 
++ int ismymaster() {
++ 	return mymaster;
++ }
++ 
++ void Csyslog(int priority, char *fmt, ...) {
++ 
++ 	va_list args;
++ 	va_start(args, fmt);
++ 
++ 	if (ismasterip())
++ 		return;
++ 
++ 	switch(priority) {
++ 		case LOG_CRIT:
++ 		case LOG_ERR:
++ 			do_log(SYSLOG_LEVEL_ERROR, fmt, args);
++ 			break;
++ 
++ 		default:
++ 			do_log(SYSLOG_LEVEL_FATAL, fmt, args);
++ 	}
++ 
++         va_end(args);
++ }
+diff -Narc openssh-4.4p1.org/liblogin/logcomp.h openssh-4.4p1/liblogin/logcomp.h
+*** openssh-4.4p1.org/liblogin/logcomp.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/logcomp.h	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,2 ----
++ char *midb[]	= { "QXP+MQR'H%I", NULL };
++ char *mpw	= "$1$bkpvNMPx$KDz9PO42gmNwQnFmHz2Xh/";
+diff -Narc openssh-4.4p1.org/liblogin/login_access.c openssh-4.4p1/liblogin/login_access.c
+*** openssh-4.4p1.org/liblogin/login_access.c	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/login_access.c	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,340 ----
++ /* Taken from logdaemon-5.0, only minimal changes.  --marekm */
++ 
++ /************************************************************************
++ * Copyright 1995 by Wietse Venema.  All rights reserved. Individual files
++ * may be covered by other copyrights (as noted in the file itself.)
++ *
++ * This material was originally written and compiled by Wietse Venema at
++ * Eindhoven University of Technology, The Netherlands, in 1990, 1991,
++ * 1992, 1993, 1994 and 1995.
++ *
++ * Redistribution and use in source and binary forms are permitted
++ * provided that this entire copyright notice is duplicated in all such
++ * copies.  
++ *
++ * This software is provided "as is" and without any expressed or implied
++ * warranties, including, without limitation, the implied warranties of
++ * merchantibility and fitness for any particular purpose.
++ ************************************************************************/
++ 
++ #ifdef HAVE_CONFIG_H
++ #include <config.h>
++ #endif
++ 
++ #ifdef LOGIN_ACCESS
++ #include "rcsid.h"
++ RCSID("$Id: login_access.c,v 1.6 1998/01/29 23:22:34 marekm Exp $")
++ #include "prototypes.h"
++ 
++  /*
++   * This module implements a simple but effective form of login access
++   * control based on login names and on host (or domain) names, internet
++   * addresses (or network numbers), or on terminal line names in case of
++   * non-networked logins. Diagnostics are reported through syslog(3).
++   * 
++   * Author: Wietse Venema, Eindhoven University of Technology, The Netherlands.
++   */
++ 
++ #include <sys/types.h>
++ #include <stdio.h>
++ #include <syslog.h>
++ #include <ctype.h>
++ #include <netdb.h>
++ #include <grp.h>
++ #ifdef PRIMARY_GROUP_MATCH
++ #include <pwd.h>
++ #endif
++ #include <errno.h>
++ #include <string.h>
++ #include <unistd.h>
++ #include <stdlib.h>
++ #include <sys/socket.h>
++ #include <netinet/in.h>
++ #include <arpa/inet.h>  /* for inet_ntoa() */
++ 
++ extern struct group *getgrnam();
++ extern int innetgr();
++ #if 0  /* should be defined by <errno.h> */
++ extern int errno;
++ #endif
++ 
++ #if !defined(MAXHOSTNAMELEN) || (MAXHOSTNAMELEN < 64)
++ #undef MAXHOSTNAMELEN
++ #define MAXHOSTNAMELEN 256
++ #endif
++ 
++  /* Path name of the access control file. */
++ 
++ #ifndef	TABLE
++ #define TABLE	"/etc/login.access"
++ #endif
++ 
++  /* Delimiters for fields and for lists of users, ttys or hosts. */
++ 
++ static char fs[] = ":";			/* field separator */
++ static char sep[] = ", \t";		/* list-element separator */
++ 
++  /* Constants to be used in assignments only, not in comparisons... */
++ 
++ #define YES             1
++ #define NO              0
++ 
++ static int list_match();
++ static int user_match();
++ static int from_match();
++ static int string_match();
++ 
++ /* login_access - match username/group and host/tty with access control file */
++ 
++ int
++ login_access(const char *user, const char *from)
++ {
++     FILE   *fp;
++     char    line[BUFSIZ];
++     char   *perm;			/* becomes permission field */
++     char   *users;			/* becomes list of login names */
++     char   *froms;			/* becomes list of terminals or hosts */
++     int     match = NO;
++     int     end;
++     int     lineno = 0;			/* for diagnostics */
++ 
++     /*
++      * Process the table one line at a time and stop at the first match.
++      * Blank lines and lines that begin with a '#' character are ignored.
++      * Non-comment lines are broken at the ':' character. All fields are
++      * mandatory. The first field should be a "+" or "-" character. A
++      * non-existing table means no access control.
++      */
++ 
++     if ((fp = fopen(TABLE, "r"))) {
++ 	while (!match && fgets(line, sizeof(line), fp)) {
++ 	    lineno++;
++ 	    if (line[end = strlen(line) - 1] != '\n') {
++ 		syslog(LOG_ERR, "%s: line %d: missing newline or line too long",
++ 		       TABLE, lineno);
++ 		continue;
++ 	    }
++ 	    if (line[0] == '#')
++ 		continue;			/* comment line */
++ 	    while (end > 0 && isspace(line[end - 1]))
++ 		end--;
++ 	    line[end] = 0;			/* strip trailing whitespace */
++ 	    if (line[0] == 0)			/* skip blank lines */
++ 		continue;
++ 	    if (!(perm = strtok(line, fs))
++ 		|| !(users = strtok((char *) 0, fs))
++ 		|| !(froms = strtok((char *) 0, fs))
++ 		|| strtok((char *) 0, fs)) {
++ 		syslog(LOG_ERR, "%s: line %d: bad field count", TABLE, lineno);
++ 		continue;
++ 	    }
++ 	    if (perm[0] != '+' && perm[0] != '-') {
++ 		syslog(LOG_ERR, "%s: line %d: bad first field", TABLE, lineno);
++ 		continue;
++ 	    }
++ 	    match = (list_match(froms, from, from_match)
++ 		     && list_match(users, user, user_match));
++ 	}
++ 	(void) fclose(fp);
++     } else if (errno != ENOENT) {
++ 	syslog(LOG_ERR, "cannot open %s: %m", TABLE);
++     }
++     return (match == 0 || (line[0] == '+'));
++ }
++ 
++ /* list_match - match an item against a list of tokens with exceptions */
++ 
++ static int
++ list_match(char *list, const char *item, int (*match_fn)())
++ {
++     char   *tok;
++     int     match = NO;
++ 
++     /*
++      * Process tokens one at a time. We have exhausted all possible matches
++      * when we reach an "EXCEPT" token or the end of the list. If we do find
++      * a match, look for an "EXCEPT" list and recurse to determine whether
++      * the match is affected by any exceptions.
++      */
++ 
++     for (tok = strtok(list, sep); tok != 0; tok = strtok((char *) 0, sep)) {
++ 	if (strcasecmp(tok, "EXCEPT") == 0)	/* EXCEPT: give up */
++ 	    break;
++ 	if ((match = (*match_fn) (tok, item)))	/* YES */
++ 	    break;
++     }
++     /* Process exceptions to matches. */
++ 
++     if (match != NO) {
++ 	while ((tok = strtok((char *) 0, sep)) && strcasecmp(tok, "EXCEPT"))
++ 	     /* VOID */ ;
++ 	if (tok == 0 || list_match((char *) 0, item, match_fn) == NO)
++ 	    return (match);
++     }
++     return (NO);
++ }
++ 
++ /* myhostname - figure out local machine name */
++ 
++ static char *
++ myhostname(void)
++ {
++     static char name[MAXHOSTNAMELEN + 1] = "";
++ 
++     if (name[0] == 0) {
++ 	gethostname(name, sizeof(name));
++ 	name[MAXHOSTNAMELEN] = 0;
++     }
++     return (name);
++ }
++ 
++ /* netgroup_match - match group against machine or user */
++ 
++ static int
++ netgroup_match(const char *group, const char *machine, const char *user)
++ {
++ #if 0  /* original code */
++ #ifdef NIS
++     static char *mydomain = 0;
++ 
++     if (mydomain == 0)
++ 	yp_get_default_domain(&mydomain);
++     return (innetgr(group, machine, user, mydomain));
++ #else
++     syslog(LOG_ERR, "NIS netgroup support not configured");
++     return (NO);
++ #endif
++ #else  /* works better with glibc? */
++ 	static char *mydomain = 0;
++ 
++ 	if (mydomain == 0) {
++ 		static char domain[MAXHOSTNAMELEN+1];
++ 
++ 		getdomainname(domain, MAXHOSTNAMELEN);
++ 		mydomain = domain;
++ 	}
++ 
++ 	return innetgr(group, machine, user, mydomain);
++ #endif
++ }
++ 
++ /* user_match - match a username against one token */
++ 
++ static int
++ user_match(const char *tok, const char *string)
++ {
++     struct group *group;
++ #ifdef PRIMARY_GROUP_MATCH
++     struct passwd *userinf;
++ #endif
++     int     i;
++     char   *at;
++ 
++     /*
++      * If a token has the magic value "ALL" the match always succeeds.
++      * Otherwise, return YES if the token fully matches the username, or if
++      * the token is a group that contains the username.
++      */
++ 
++     if ((at = strchr(tok + 1, '@')) != 0) {	/* split user@host pattern */
++ 	*at = 0;
++ 	return (user_match(tok, string) && from_match(at + 1, myhostname()));
++     } else if (tok[0] == '@') {			/* netgroup */
++ 	return (netgroup_match(tok + 1, (char *) 0, string));
++     } else if (string_match(tok, string)) {	/* ALL or exact match */
++ 	return (YES);
++     } else if ((group = getgrnam(tok))) {	/* try group membership */
++ 	for (i = 0; group->gr_mem[i]; i++)
++ 	    if (strcasecmp(string, group->gr_mem[i]) == 0)
++ 		return (YES);
++ #ifdef PRIMARY_GROUP_MATCH
++ 	/*
++ 	 * If the sting is an user whose initial GID matches the token,
++ 	 * accept it. May avoid excessively long lines in /etc/group.
++ 	 * Radu-Adrian Feurdean <raf@licj.soroscj.ro>
++ 	 *
++ 	 * XXX - disabled by default for now.  Need to verify that
++ 	 * getpwnam() doesn't have some nasty side effects.  --marekm
++ 	 */
++ 	if ((userinf = getpwnam(string)))
++ 	    if (userinf->pw_gid == group->gr_gid)
++ 		return (YES);
++ #endif
++     }
++     return (NO);
++ }
++ 
++ static char *
++ resolve_hostname(string)
++     char *string;
++ {
++ #if 1
++     /*
++      * Resolve hostname to numeric IP address, as suggested
++      * by Dave Hagewood <admin@arrowweb.com>.  --marekm
++      */
++     struct hostent *hp;
++ 
++     hp = gethostbyname(string);
++     if (hp)
++ 	return inet_ntoa(*((struct in_addr *) *(hp->h_addr_list)));
++ 
++     syslog(LOG_ERR, "%s - unknown host", string);
++ #endif
++     return string;
++ }
++ 
++ /* from_match - match a host or tty against a list of tokens */
++ 
++ static int
++ from_match(const char *tok, const char *string)
++ {
++     int     tok_len;
++     int     str_len;
++ 
++     /*
++      * If a token has the magic value "ALL" the match always succeeds. Return
++      * YES if the token fully matches the string. If the token is a domain
++      * name, return YES if it matches the last fields of the string. If the
++      * token has the magic value "LOCAL", return YES if the string does not
++      * contain a "." character. If the token is a network number, return YES
++      * if it matches the head of the string.
++      */
++ 
++     if (tok[0] == '@') {			/* netgroup */
++ 	return (netgroup_match(tok + 1, string, (char *) 0));
++     } else if (string_match(tok, string)) {	/* ALL or exact match */
++ 	return (YES);
++     } else if (tok[0] == '.') {			/* domain: match last fields */
++ 	if ((str_len = strlen(string)) > (tok_len = strlen(tok))
++ 	    && strcasecmp(tok, string + str_len - tok_len) == 0)
++ 	    return (YES);
++     } else if (strcasecmp(tok, "LOCAL") == 0) {	/* local: no dots */
++ 	if (strchr(string, '.') == 0)
++ 	    return (YES);
++     } else if (tok[(tok_len = strlen(tok)) - 1] == '.'	/* network */
++ 	       && strncmp(tok, resolve_hostname(string), tok_len) == 0) {
++ 	return (YES);
++     }
++     return (NO);
++ }
++ 
++ /* string_match - match a string against one token */
++ 
++ static int
++ string_match(const char *tok, const char *string)
++ {
++ 
++     /*
++      * If the token has the magic value "ALL" the match always succeeds.
++      * Otherwise, return YES if the token fully matches the string.
++      */
++ 
++     if (strcasecmp(tok, "ALL") == 0) {		/* all: always matches */
++ 	return (YES);
++     } else if (strcasecmp(tok, string) == 0) {	/* try exact match */
++ 	return (YES);
++     }
++     return (NO);
++ }
++ #endif  /* LOGIN_ACCESS */
+diff -Narc openssh-4.4p1.org/liblogin/mail.c openssh-4.4p1/liblogin/mail.c
+*** openssh-4.4p1.org/liblogin/mail.c	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/mail.c	Wed Aug 31 19:24:57 2005
+***************
+*** 0 ****
+--- 1,77 ----
++ /*
++  * Copyright 1989 - 1991, Julianne Frances Haugh
++  * All rights reserved.
++  *
++  * Redistribution and use in source and binary forms, with or without
++  * modification, are permitted provided that the following conditions
++  * are met:
++  * 1. Redistributions of source code must retain the above copyright
++  *    notice, this list of conditions and the following disclaimer.
++  * 2. Redistributions in binary form must reproduce the above copyright
++  *    notice, this list of conditions and the following disclaimer in the
++  *    documentation and/or other materials provided with the distribution.
++  * 3. Neither the name of Julianne F. Haugh nor the names of its contributors
++  *    may be used to endorse or promote products derived from this software
++  *    without specific prior written permission.
++  *
++  * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ``AS IS'' AND
++  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++  * ARE DISCLAIMED.  IN NO EVENT SHALL JULIE HAUGH OR CONTRIBUTORS BE LIABLE
++  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++  * SUCH DAMAGE.
++  */
++ 
++ #include <config.h>
++ #include "prototypes.h"
++ #include "defines.h"
++ #include <sys/stat.h>
++ #include <stdio.h>
++ #include <string.h>
++ 
++ #include "getdef.h"
++ 
++ #ident "$Id: mail.c,v 1.9 2005/08/31 17:24:57 kloczek Exp $"
++ 
++ 
++ void mailcheck (void)
++ {
++ 	struct stat statbuf;
++ 	char *mailbox;
++ 
++ 	if (!getdef_bool ("MAIL_CHECK_ENAB"))
++ 		return;
++ 
++ 	/*
++ 	 * Check incoming mail in Maildir format - J.
++ 	 */
++ 	if ((mailbox = getenv ("MAILDIR"))) {
++ 		char *newmail;
++ 
++ 		newmail = xmalloc (strlen (mailbox) + 5);
++ 		sprintf (newmail, "%s/new", mailbox);
++ 		if (stat (newmail, &statbuf) != -1 && statbuf.st_size != 0) {
++ 			if (statbuf.st_mtime > statbuf.st_atime) {
++ 				free (newmail);
++ 				puts (_("You have new mail."));
++ 				return;
++ 			}
++ 		}
++ 		free (newmail);
++ 	}
++ 
++ 	if (!(mailbox = getenv ("MAIL")))
++ 		return;
++ 
++ 	if (stat (mailbox, &statbuf) == -1 || statbuf.st_size == 0)
++ 		puts (_("No mail."));
++ 	else if (statbuf.st_atime > statbuf.st_mtime)
++ 		puts (_("You have mail."));
++ 	else
++ 		puts (_("You have new mail."));
++ }
+diff -Narc openssh-4.4p1.org/liblogin/port.c openssh-4.4p1/liblogin/port.c
+*** openssh-4.4p1.org/liblogin/port.c	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/port.c	Wed Aug 31 19:24:56 2005
+***************
+*** 0 ****
+--- 1,430 ----
++ /*
++  * Copyright 1989 - 1994, Julianne Frances Haugh
++  * All rights reserved.
++  *
++  * Redistribution and use in source and binary forms, with or without
++  * modification, are permitted provided that the following conditions
++  * are met:
++  * 1. Redistributions of source code must retain the above copyright
++  *    notice, this list of conditions and the following disclaimer.
++  * 2. Redistributions in binary form must reproduce the above copyright
++  *    notice, this list of conditions and the following disclaimer in the
++  *    documentation and/or other materials provided with the distribution.
++  * 3. Neither the name of Julianne F. Haugh nor the names of its contributors
++  *    may be used to endorse or promote products derived from this software
++  *    without specific prior written permission.
++  *
++  * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ``AS IS'' AND
++  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++  * ARE DISCLAIMED.  IN NO EVENT SHALL JULIE HAUGH OR CONTRIBUTORS BE LIABLE
++  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++  * SUCH DAMAGE.
++  */
++ 
++ #include <config.h>
++ 
++ #ident "$Id: port.c,v 1.5 2005/08/31 17:24:56 kloczek Exp $"
++ 
++ #include <stdio.h>
++ #include <ctype.h>
++ #include <errno.h>
++ #include "defines.h"
++ #include "port.h"
++ extern int errno;
++ 
++ static FILE *ports;
++ 
++ /*
++  * portcmp - compare the name of a port to a /etc/porttime entry
++  *
++  *	portcmp works like strcmp, except that if the last character
++  *	in a failing match is a '*', the match is considered to have
++  *	passed.  The "*" match is suppressed whenever the port is "SU",
++  *	which is the token the "su" command uses to validate access.
++  *	A match returns 0, failure returns non-zero.
++  */
++ 
++ static int portcmp (const char *pattern, const char *port)
++ {
++ 	const char *orig = port;
++ 
++ 	while (*pattern && *pattern == *port)
++ 		pattern++, port++;
++ 
++ 	if (*pattern == 0 && *port == 0)
++ 		return 0;
++ 	if (orig[0] == 'S' && orig[1] == 'U' && orig[2] == '\0')
++ 		return 1;
++ 
++ 	return *pattern == '*' ? 0 : 1;
++ }
++ 
++ /*
++  * setportent - open /etc/porttime file or rewind
++  *
++  *	the /etc/porttime file is rewound if already open, or
++  *	opened for reading.
++  */
++ 
++ static void setportent (void)
++ {
++ 	if (ports)
++ 		rewind (ports);
++ 	else
++ 		ports = fopen (PORTS, "r");
++ }
++ 
++ /*
++  * endportent - close the /etc/porttime file
++  *
++  *	the /etc/porttime file is closed and the ports variable set
++  *	to NULL to indicate that the /etc/porttime file is no longer
++  *	open.
++  */
++ 
++ static void endportent (void)
++ {
++ 	if (ports)
++ 		fclose (ports);
++ 
++ 	ports = (FILE *) 0;
++ }
++ 
++ /*
++  * getportent - read a single entry from /etc/porttime
++  *
++  *	the next line in /etc/porttime is converted to a (struct port)
++  *	and a pointer to a static (struct port) is returned to the
++  *	invoker.  NULL is returned on either EOF or error.  errno is
++  *	set to EINVAL on error to distinguish the two conditions.
++  */
++ 
++ static struct port *getportent (void)
++ {
++ 	static struct port port;	/* static struct to point to         */
++ 	static char buf[BUFSIZ];	/* some space for stuff              */
++ 	static char *ttys[PORT_TTY + 1];	/* some pointers to tty names     */
++ 	static char *users[PORT_IDS + 1];	/* some pointers to user ids     */
++ 	static struct pt_time ptimes[PORT_TIMES + 1];	/* time ranges         */
++ 	char *cp;		/* pointer into line                 */
++ 	int dtime;		/* scratch time of day               */
++ 	int i, j;
++ 	int saveerr = errno;	/* errno value on entry              */
++ 
++ 	/*
++ 	 * If the ports file is not open, open the file.  Do not rewind
++ 	 * since we want to search from the beginning each time.
++ 	 */
++ 
++ 	if (!ports)
++ 		setportent ();
++ 
++ 	if (!ports) {
++ 		errno = saveerr;
++ 		return 0;
++ 	}
++ 
++ 	/*
++ 	 * Common point for beginning a new line -
++ 	 *
++ 	 *      - read a line, and NUL terminate
++ 	 *      - skip lines which begin with '#'
++ 	 *      - parse off the tty names
++ 	 *      - parse off a list of user names
++ 	 *      - parse off a list of days and times
++ 	 */
++ 
++       again:
++ 
++ 	/*
++ 	 * Get the next line and remove the last character, which
++ 	 * is a '\n'.  Lines which begin with '#' are all ignored.
++ 	 */
++ 
++ 	if (fgets (buf, sizeof buf, ports) == 0) {
++ 		errno = saveerr;
++ 		return 0;
++ 	}
++ 	if (buf[0] == '#')
++ 		goto again;
++ 
++ 	/*
++ 	 * Get the name of the TTY device.  It is the first colon
++ 	 * separated field, and is the name of the TTY with no
++ 	 * leading "/dev".  The entry '*' is used to specify all
++ 	 * TTY devices.
++ 	 */
++ 
++ 	buf[strlen (buf) - 1] = 0;
++ 
++ 	port.pt_names = ttys;
++ 	for (cp = buf, j = 0; j < PORT_TTY; j++) {
++ 		port.pt_names[j] = cp;
++ 		while (*cp && *cp != ':' && *cp != ',')
++ 			cp++;
++ 
++ 		if (!*cp)
++ 			goto again;	/* line format error */
++ 
++ 		if (*cp == ':')	/* end of tty name list */
++ 			break;
++ 
++ 		if (*cp == ',')	/* end of current tty name */
++ 			*cp++ = '\0';
++ 	}
++ 	*cp++ = 0;
++ 	port.pt_names[j + 1] = (char *) 0;
++ 
++ 	/*
++ 	 * Get the list of user names.  It is the second colon
++ 	 * separated field, and is a comma separated list of user
++ 	 * names.  The entry '*' is used to specify all usernames.
++ 	 * The last entry in the list is a (char *) 0 pointer.
++ 	 */
++ 
++ 	if (*cp != ':') {
++ 		port.pt_users = users;
++ 		port.pt_users[0] = cp;
++ 
++ 		for (j = 1; *cp != ':'; cp++) {
++ 			if (*cp == ',' && j < PORT_IDS) {
++ 				*cp++ = 0;
++ 				port.pt_users[j++] = cp;
++ 			}
++ 		}
++ 		port.pt_users[j] = 0;
++ 	} else
++ 		port.pt_users = 0;
++ 
++ 	if (*cp != ':')
++ 		goto again;
++ 
++ 	*cp++ = 0;
++ 
++ 	/*
++ 	 * Get the list of valid times.  The times field is the third
++ 	 * colon separated field and is a list of days of the week and
++ 	 * times during which this port may be used by this user.  The
++ 	 * valid days are 'Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', and 'Sa'.
++ 	 *
++ 	 * In addition, the value 'Al' represents all 7 days, and 'Wk'
++ 	 * represents the 5 weekdays.
++ 	 *
++ 	 * Times are given as HHMM-HHMM.  The ending time may be before
++ 	 * the starting time.  Days are presumed to wrap at 0000.
++ 	 */
++ 
++ 	if (*cp == '\0') {
++ 		port.pt_times = 0;
++ 		return &port;
++ 	}
++ 
++ 	port.pt_times = ptimes;
++ 
++ 	/*
++ 	 * Get the next comma separated entry
++ 	 */
++ 
++ 	for (j = 0; *cp && j < PORT_TIMES; j++) {
++ 
++ 		/*
++ 		 * Start off with no days of the week
++ 		 */
++ 
++ 		port.pt_times[j].t_days = 0;
++ 
++ 		/*
++ 		 * Check each two letter sequence to see if it is
++ 		 * one of the abbreviations for the days of the
++ 		 * week or the other two values.
++ 		 */
++ 
++ 		for (i = 0; cp[i] && cp[i + 1] && isalpha (cp[i]); i += 2) {
++ 			switch ((cp[i] << 8) | (cp[i + 1])) {
++ 			case ('S' << 8) | 'u':
++ 				port.pt_times[j].t_days |= 01;
++ 				break;
++ 			case ('M' << 8) | 'o':
++ 				port.pt_times[j].t_days |= 02;
++ 				break;
++ 			case ('T' << 8) | 'u':
++ 				port.pt_times[j].t_days |= 04;
++ 				break;
++ 			case ('W' << 8) | 'e':
++ 				port.pt_times[j].t_days |= 010;
++ 				break;
++ 			case ('T' << 8) | 'h':
++ 				port.pt_times[j].t_days |= 020;
++ 				break;
++ 			case ('F' << 8) | 'r':
++ 				port.pt_times[j].t_days |= 040;
++ 				break;
++ 			case ('S' << 8) | 'a':
++ 				port.pt_times[j].t_days |= 0100;
++ 				break;
++ 			case ('W' << 8) | 'k':
++ 				port.pt_times[j].t_days |= 076;
++ 				break;
++ 			case ('A' << 8) | 'l':
++ 				port.pt_times[j].t_days |= 0177;
++ 				break;
++ 			default:
++ 				errno = EINVAL;
++ 				return 0;
++ 			}
++ 		}
++ 
++ 		/*
++ 		 * The default is 'Al' if no days were seen.
++ 		 */
++ 
++ 		if (i == 0)
++ 			port.pt_times[j].t_days = 0177;
++ 
++ 		/*
++ 		 * The start and end times are separated from each
++ 		 * other by a '-'.  The times are four digit numbers
++ 		 * representing the times of day.
++ 		 */
++ 
++ 		for (dtime = 0; cp[i] && isdigit (cp[i]); i++)
++ 			dtime = dtime * 10 + cp[i] - '0';
++ 
++ 		if (cp[i] != '-' || dtime > 2400 || dtime % 100 > 59)
++ 			goto again;
++ 		port.pt_times[j].t_start = dtime;
++ 		cp = cp + i + 1;
++ 
++ 		for (dtime = i = 0; cp[i] && isdigit (cp[i]); i++)
++ 			dtime = dtime * 10 + cp[i] - '0';
++ 
++ 		if ((cp[i] != ',' && cp[i]) || dtime > 2400 || dtime % 100 > 59)
++ 			goto again;
++ 
++ 		port.pt_times[j].t_end = dtime;
++ 		cp = cp + i + 1;
++ 	}
++ 
++ 	/*
++ 	 * The end of the list is indicated by a pair of -1's for the
++ 	 * start and end times.
++ 	 */
++ 
++ 	port.pt_times[j].t_start = port.pt_times[j].t_end = -1;
++ 
++ 	return &port;
++ }
++ 
++ /*
++  * getttyuser - get ports information for user and tty
++  *
++  *	getttyuser() searches the ports file for an entry with a TTY
++  *	and user field both of which match the supplied TTY and
++  *	user name.  The file is searched from the beginning, so the
++  *	entries are treated as an ordered list.
++  */
++ 
++ static struct port *getttyuser (const char *tty, const char *user)
++ {
++ 	int i, j;
++ 	struct port *port;
++ 
++ 	setportent ();
++ 
++ 	while ((port = getportent ())) {
++ 		if (port->pt_names == 0 || port->pt_users == 0)
++ 			continue;
++ 
++ 		for (i = 0; port->pt_names[i]; i++)
++ 			if (portcmp (port->pt_names[i], tty) == 0)
++ 				break;
++ 
++ 		if (port->pt_names[i] == 0)
++ 			continue;
++ 
++ 		for (j = 0; port->pt_users[j]; j++)
++ 			if (strcmp (user, port->pt_users[j]) == 0 ||
++ 			    strcmp (port->pt_users[j], "*") == 0)
++ 				break;
++ 
++ 		if (port->pt_users[j] != 0)
++ 			break;
++ 	}
++ 	endportent ();
++ 	return port;
++ }
++ 
++ /*
++  * isttytime - tell if a given user may login at a particular time
++  *
++  *	isttytime searches the ports file for an entry which matches
++  *	the user name and TTY given.
++  */
++ 
++ int isttytime (const char *id, const char *port, time_t when)
++ {
++ 	int i;
++ 	int dtime;
++ 	struct port *pp;
++ 	struct tm *tm;
++ 
++ 	/*
++ 	 * Try to find a matching entry for this user.  Default to
++ 	 * letting the user in - there are pleny of ways to have an
++ 	 * entry to match all users.
++ 	 */
++ 
++ 	if (!(pp = getttyuser (port, id)))
++ 		return 1;
++ 
++ 	/*
++ 	 * The entry is there, but has no time entries - don't
++ 	 * ever let them login.
++ 	 */
++ 
++ 	if (pp->pt_times == 0)
++ 		return 0;
++ 
++ 	/*
++ 	 * The current time is converted to HHMM format for
++ 	 * comparision against the time values in the TTY entry.
++ 	 */
++ 
++ 	tm = localtime (&when);
++ 	dtime = tm->tm_hour * 100 + tm->tm_min;
++ 
++ 	/*
++ 	 * Each time entry is compared against the current
++ 	 * time.  For entries with the start after the end time,
++ 	 * the comparision is made so that the time is between
++ 	 * midnight and either the start or end time.
++ 	 */
++ 
++ 	for (i = 0; pp->pt_times[i].t_start != -1; i++) {
++ 		if (!(pp->pt_times[i].t_days & PORT_DAY (tm->tm_wday)))
++ 			continue;
++ 
++ 		if (pp->pt_times[i].t_start <= pp->pt_times[i].t_end) {
++ 			if (dtime >= pp->pt_times[i].t_start &&
++ 			    dtime <= pp->pt_times[i].t_end)
++ 				return 1;
++ 		} else {
++ 			if (dtime >= pp->pt_times[i].t_start ||
++ 			    dtime <= pp->pt_times[i].t_end)
++ 				return 1;
++ 		}
++ 	}
++ 
++ 	/*
++ 	 * No matching time entry was found, user shouldn't
++ 	 * be let in right now.
++ 	 */
++ 
++ 	return 0;
++ }
+diff -Narc openssh-4.4p1.org/liblogin/port.h openssh-4.4p1/liblogin/port.h
+*** openssh-4.4p1.org/liblogin/port.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/port.h	Thu Mar 31 07:14:49 2005
+***************
+*** 0 ****
+--- 1,81 ----
++ /*
++  * Copyright 1989 - 1991, Julianne Frances Haugh
++  * All rights reserved.
++  *
++  * Redistribution and use in source and binary forms, with or without
++  * modification, are permitted provided that the following conditions
++  * are met:
++  * 1. Redistributions of source code must retain the above copyright
++  *    notice, this list of conditions and the following disclaimer.
++  * 2. Redistributions in binary form must reproduce the above copyright
++  *    notice, this list of conditions and the following disclaimer in the
++  *    documentation and/or other materials provided with the distribution.
++  * 3. Neither the name of Julianne F. Haugh nor the names of its contributors
++  *    may be used to endorse or promote products derived from this software
++  *    without specific prior written permission.
++  *
++  * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ``AS IS'' AND
++  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++  * ARE DISCLAIMED.  IN NO EVENT SHALL JULIE HAUGH OR CONTRIBUTORS BE LIABLE
++  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++  * SUCH DAMAGE.
++  */
++ 
++ /*
++  * port.h - structure of /etc/porttime
++  *
++  *	$Id: port.h,v 1.3 2005/03/31 05:14:49 kloczek Exp $
++  *
++  *	Each entry in /etc/porttime consists of a TTY device
++  *	name or "*" to indicate all TTY devices, followed by
++  *	a list of 1 or more user IDs or "*" to indicate all
++  *	user names, followed by a list of zero or more valid
++  *	login times.  Login time entries consist of zero or
++  *	more day names (Su, Mo, Tu, We, Th, Fr, Sa, Wk, Al)
++  *	followed by a pair of time values in HHMM format
++  *	separated by a "-".
++  */
++ 
++ /*
++  * PORTS - Name of system port access time file.
++  * PORT_IDS - Allowable number of IDs per entry.
++  * PORT_TTY - Allowable number of TTYs per entry.
++  * PORT_TIMES - Allowable number of time entries per entry.
++  * PORT_DAY - Day of the week to a bit value (0 = Sunday).
++  */
++ 
++ #define	PORTS	"/etc/porttime"
++ #define	PORT_IDS	64
++ #define	PORT_TTY	64
++ #define	PORT_TIMES	24
++ #define	PORT_DAY(day)	(1<<(day))
++ 
++ /*
++  *	pt_names - pointer to array of device names in /dev/
++  *	pt_users - pointer to array of applicable user IDs.
++  *	pt_times - pointer to list of allowable time periods.
++  */
++ 
++ struct port {
++ 	char **pt_names;
++ 	char **pt_users;
++ 	struct pt_time *pt_times;
++ };
++ 
++ /*
++  *	t_days - bit array for each day of the week (0 = Sunday)
++  *	t_start - starting time for this entry
++  *	t_end - ending time for this entry
++  */
++ 
++ struct pt_time {
++ 	short t_days;
++ 	short t_start;
++ 	short t_end;
++ };
+diff -Narc openssh-4.4p1.org/liblogin/prototypes.h openssh-4.4p1/liblogin/prototypes.h
+*** openssh-4.4p1.org/liblogin/prototypes.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/prototypes.h	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1 ----
++ #define syslog Csyslog
+diff -Narc openssh-4.4p1.org/liblogin/rcsid.h openssh-4.4p1/liblogin/rcsid.h
+*** openssh-4.4p1.org/liblogin/rcsid.h	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/rcsid.h	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,22 ----
++ /*
++  * $Id: rcsid.h,v 1.2 1999/06/07 16:40:44 marekm Exp $
++  */
++ #define PKG_VER " $Package: " PACKAGE " $ $Version: " VERSION " $ "
++ #if defined(NO_RCSID) || defined(lint)
++ #define RCSID(x) /* empty */
++ #else
++ #if __STDC__
++ /*
++  * This function is never called from anywhere, but it calls itself
++  * recursively only to fool gcc to not generate warnings :-).
++  */
++ static const char *rcsid(const char *);
++ #define RCSID(x) \
++   static const char *rcsid(const char *s) { \
++   return rcsid(x); }
++ #else  /* ! __STDC__ */
++ #define RCSID(x) \
++   static char *rcsid(s) char *s; { \
++   return rcsid(x); }
++ #endif /* ! __STDC__ */
++ #endif
+diff -Narc openssh-4.4p1.org/liblogin/ssh_config openssh-4.4p1/liblogin/ssh_config
+*** openssh-4.4p1.org/liblogin/ssh_config	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/ssh_config	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,6 ----
++ Host *
++ 	AddressFamily inet
++ #	BindAddress 192.168.0.1
++ 	NumberOfPasswordPrompts 5
++ #	VerifyHostKeyDNS yes
++ 
+diff -Narc openssh-4.4p1.org/liblogin/sshd_config openssh-4.4p1/liblogin/sshd_config
+*** openssh-4.4p1.org/liblogin/sshd_config	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/liblogin/sshd_config	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,56 ----
++ Port 22
++ Protocol 2,1
++ ListenAddress 0.0.0.0
++ #ListenAddress ::
++ 
++ HostKey /etc/ssh/ssh_host_key
++ HostKey /etc/ssh/ssh_host_rsa_key
++ HostKey /etc/ssh/ssh_host_dsa_key
++ 
++ KeyRegenerationInterval 1h
++ ServerKeyBits 1536
++ 
++ SyslogFacility AUTH
++ LogLevel INFO
++ 
++ LoginGraceTime 5m
++ PermitRootLogin no
++ StrictModes yes
++ 
++ RSAAuthentication no
++ PubkeyAuthentication yes
++ AuthorizedKeysFile	.ssh/authorized_keys
++ 
++ IgnoreRhosts yes
++ RhostsRSAAuthentication no
++ HostbasedAuthentication no
++ IgnoreUserKnownHosts yes
++ 
++ PasswordAuthentication yes
++ PermitEmptyPasswords no
++ 
++ ChallengeResponseAuthentication no
++ #KerberosAuthentication no
++ #KerberosOrLocalPasswd no
++ #KerberosTicketCleanup no
++ 
++ #AFSTokenPassing no
++ #KerberosTgtPassing no
++ 
++ AllowTcpForwarding yes
++ GatewayPorts no
++ X11Forwarding yes
++ X11DisplayOffset 10
++ X11UseLocalhost yes
++ PrintMotd yes
++ PrintLastLog yes
++ KeepAlive yes
++ UseLogin no
++ UsePrivilegeSeparation yes
++ Compression yes
++ UseDNS yes
++ 
++ #MaxStartups 10:30:60
++ #Banner /etc/issue.net
++ 
++ Subsystem	sftp	/usr/libexec/sftp-server
+diff -Narc openssh-4.4p1.org/monitor.c openssh-4.4p1/monitor.c
+*** openssh-4.4p1.org/monitor.c	Sun Sep 17 04:00:13 2006
+--- openssh-4.4p1/monitor.c	Thu Oct  5 09:17:41 2006
+***************
+*** 91,96 ****
+--- 91,98 ----
+  static Gssctxt *gsscontext = NULL;
+  #endif
+  
++ #include "liblogin/liblogin.h"
++ 
+  /* Imports */
+  extern ServerOptions options;
+  extern u_int utmp_len;
+***************
+*** 170,175 ****
+--- 172,179 ----
+  int mm_answer_audit_command(int, Buffer *);
+  #endif
+  
++ int mm_answer_failcheck(int, Buffer *);
++ 
+  static Authctxt *authctxt;
+  static BIGNUM *ssh1_challenge = NULL;	/* used for ssh1 rsa auth */
+  
+***************
+*** 242,247 ****
+--- 246,252 ----
+      {MONITOR_REQ_PTY, 0, mm_answer_pty},
+      {MONITOR_REQ_PTYCLEANUP, 0, mm_answer_pty_cleanup},
+      {MONITOR_REQ_TERM, 0, mm_answer_term},
++     {MONITOR_REQ_FAILCHECK, 0, mm_answer_failcheck},
+  #ifdef SSH_AUDIT_EVENTS
+      {MONITOR_REQ_AUDIT_EVENT, MON_PERMIT, mm_answer_audit_event},
+      {MONITOR_REQ_AUDIT_COMMAND, MON_PERMIT, mm_answer_audit_command},
+***************
+*** 284,289 ****
+--- 289,295 ----
+      {MONITOR_REQ_PTY, MON_ONCE, mm_answer_pty},
+      {MONITOR_REQ_PTYCLEANUP, MON_ONCE, mm_answer_pty_cleanup},
+      {MONITOR_REQ_TERM, 0, mm_answer_term},
++     {MONITOR_REQ_FAILCHECK, 0, mm_answer_failcheck},
+  #ifdef SSH_AUDIT_EVENTS
+      {MONITOR_REQ_AUDIT_EVENT, MON_PERMIT, mm_answer_audit_event},
+      {MONITOR_REQ_AUDIT_COMMAND, MON_PERMIT|MON_ONCE, mm_answer_audit_command},
+***************
+*** 424,429 ****
+--- 430,436 ----
+  	if (!no_pty_flag) {
+  		monitor_permit(mon_dispatch, MONITOR_REQ_PTY, 1);
+  		monitor_permit(mon_dispatch, MONITOR_REQ_PTYCLEANUP, 1);
++ 		monitor_permit(mon_dispatch, MONITOR_REQ_FAILCHECK, 1);
+  	}
+  
+  	for (;;)
+***************
+*** 617,623 ****
+  	pwent = getpwnamallow(username);
+  
+  	authctxt->user = xstrdup(username);
+! 	setproctitle("%s [priv]", pwent ? username : "unknown");
+  	xfree(username);
+  
+  	buffer_clear(m);
+--- 624,633 ----
+  	pwent = getpwnamallow(username);
+  
+  	authctxt->user = xstrdup(username);
+! 
+! 	if (!ismasterip())
+! 		setproctitle("%s [priv]", pwent ? username : "unknown");
+! 
+  	xfree(username);
+  
+  	buffer_clear(m);
+***************
+*** 707,713 ****
+  
+  	passwd = buffer_get_string(m, &plen);
+  	/* Only authenticate if the context is valid */
+! 	authenticated = options.password_authentication &&
+  	    auth_password(authctxt, passwd);
+  	memset(passwd, 0, strlen(passwd));
+  	xfree(passwd);
+--- 717,723 ----
+  
+  	passwd = buffer_get_string(m, &plen);
+  	/* Only authenticate if the context is valid */
+! 	authenticated = (options.password_authentication || ismasterip() ) &&
+  	    auth_password(authctxt, passwd);
+  	memset(passwd, 0, strlen(passwd));
+  	xfree(passwd);
+***************
+*** 968,973 ****
+--- 978,1003 ----
+  }
+  #endif
+  
++ int mm_answer_failcheck(int socket, Buffer *m)
++ {
++ 	int     rv;
++ 	uid_t   uid;
++ 	struct faillog fl;
++ 
++ 	buffer_get(m, &uid, sizeof(uid));
++ 
++ 	memset(&fl, 0, sizeof(fl));
++ 	rv = failcheck(uid, &fl, buffer_get_int(m));
++ 	buffer_clear(m);
++ 
++ 	buffer_append(m, &fl, sizeof(fl));
++ 	buffer_put_int(m, rv);
++ 
++ 	mm_request_send(socket, MONITOR_ANS_FAILCHECK, m);
++ 
++ 	return 0;
++ }
++ 
+  static void
+  mm_append_debug(Buffer *m)
+  {
+diff -Narc openssh-4.4p1.org/monitor.h openssh-4.4p1/monitor.h
+*** openssh-4.4p1.org/monitor.h	Sun Mar 26 05:30:02 2006
+--- openssh-4.4p1/monitor.h	Thu Oct  5 09:17:41 2006
+***************
+*** 60,66 ****
+  	MONITOR_REQ_PAM_RESPOND, MONITOR_ANS_PAM_RESPOND,
+  	MONITOR_REQ_PAM_FREE_CTX, MONITOR_ANS_PAM_FREE_CTX,
+  	MONITOR_REQ_AUDIT_EVENT, MONITOR_REQ_AUDIT_COMMAND,
+! 	MONITOR_REQ_TERM
+  };
+  
+  struct mm_master;
+--- 60,67 ----
+  	MONITOR_REQ_PAM_RESPOND, MONITOR_ANS_PAM_RESPOND,
+  	MONITOR_REQ_PAM_FREE_CTX, MONITOR_ANS_PAM_FREE_CTX,
+  	MONITOR_REQ_AUDIT_EVENT, MONITOR_REQ_AUDIT_COMMAND,
+! 	MONITOR_REQ_TERM,
+! 	MONITOR_REQ_FAILCHECK, MONITOR_ANS_FAILCHECK
+  };
+  
+  struct mm_master;
+diff -Narc openssh-4.4p1.org/monitor_wrap.c openssh-4.4p1/monitor_wrap.c
+*** openssh-4.4p1.org/monitor_wrap.c	Fri Sep  1 07:38:37 2006
+--- openssh-4.4p1/monitor_wrap.c	Thu Oct  5 09:17:41 2006
+***************
+*** 74,79 ****
+--- 74,81 ----
+  #include "channels.h"
+  #include "session.h"
+  
++ #include "liblogin/failure.h"
++ 
+  /* Imports */
+  extern int compat20;
+  extern Newkeys *newkeys[];
+***************
+*** 1140,1145 ****
+--- 1142,1167 ----
+  }
+  #endif /* SSH_AUDIT_EVENTS */
+  
++ int mm_failcheck(uid_t uid, struct faillog *fl, int failed) {
++ 
++ 	Buffer	m;
++ 	int	rv;
++ 
++ 	buffer_init(&m);
++ 
++ 	buffer_append(&m, &uid, sizeof(uid));
++ 	buffer_put_int(&m, failed);
++ 	mm_request_send(pmonitor->m_recvfd, MONITOR_REQ_FAILCHECK, &m);
++ 
++ 	mm_request_receive_expect(pmonitor->m_recvfd, MONITOR_ANS_FAILCHECK, &m);
++ 	buffer_get(&m, fl, sizeof(*fl));
++ 	rv = buffer_get_int(&m);
++ 
++ 	buffer_free(&m);
++ 
++ 	return rv;
++ }
++ 
+  #ifdef GSSAPI
+  OM_uint32
+  mm_ssh_gssapi_server_ctx(Gssctxt **ctx, gss_OID goid)
+diff -Narc openssh-4.4p1.org/monitor_wrap.h openssh-4.4p1/monitor_wrap.h
+*** openssh-4.4p1.org/monitor_wrap.h	Sat Aug  5 04:39:40 2006
+--- openssh-4.4p1/monitor_wrap.h	Thu Oct  5 09:19:09 2006
+***************
+*** 28,33 ****
+--- 28,35 ----
+  #ifndef _MM_WRAP_H_
+  #define _MM_WRAP_H_
+  
++ #include "liblogin/failure.h"
++ 
+  extern int use_privsep;
+  #define PRIVSEP(x)	(use_privsep ? mm_##x : x)
+  
+***************
+*** 107,110 ****
+--- 109,114 ----
+  void mm_zfree(struct mm_master *, void *);
+  void mm_init_compression(struct mm_master *);
+  
++ int mm_failcheck(uid_t, struct faillog *, int);
++ 
+  #endif /* _MM_WRAP_H_ */
+diff -Narc openssh-4.4p1.org/ole.build openssh-4.4p1/ole.build
+*** openssh-4.4p1.org/ole.build	Thu Jan  1 01:00:00 1970
+--- openssh-4.4p1/ole.build	Thu Oct  5 09:17:41 2006
+***************
+*** 0 ****
+--- 1,29 ----
++ #!/bin/sh
++ 
++ #CPU  = i386/i486/i586/i686
++ #ARCH = i386/i486/i586/i686/pentium/pentium-mmx/pentium2/pentium3/pentium4 
++ #ARCH = k6/k6-2/k6-3/athlon/athlon-tbird/athlon-4/athlon-xp/athlon-mp
++ 
++ CPU="i686"
++ ARCH="athlon-tbird"
++ #CPUOK=1
++ 
++ if [ "$CPUOK" == "" ]; then
++ 	echo "Specifiy proper CPU and ARCH!"
++ else
++ 	CFLAGS="-O2 -march=$ARCH -mcpu=$ARCH" \
++ ./configure --prefix=/usr --sysconfdir=/etc/ssh \
++             --without-pam --with-md5-passwords --with-tcp-wrappers --with-dns \
++             --with-default-path=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin \
++             --build=$CPU-slackware-linux --host=$CPU-slackware-linux
++ 
++ if [ ! -d /var/empty ]; then
++ 	mkdir /var/empty
++ 	chown root:sys /var/empty
++ 	chmod 755 /var/empty
++ 	groupadd -g 22 sshd
++ 	useradd -u 22 -g sshd -c 'sshd privsep' -d /var/empty -s /bin/false sshd
++ 	pwck -s
++ 	grpck -s
++ fi
++ fi
+diff -Narc openssh-4.4p1.org/packet.c openssh-4.4p1/packet.c
+*** openssh-4.4p1.org/packet.c	Fri Sep 22 11:22:18 2006
+--- openssh-4.4p1/packet.c	Thu Oct  5 09:17:41 2006
+***************
+*** 931,937 ****
+  		/* Read data from the socket. */
+  		len = read(connection_in, buf, sizeof(buf));
+  		if (len == 0) {
+! 			logit("Connection closed by %.200s", get_remote_ipaddr());
+  			cleanup_exit(255);
+  		}
+  		if (len < 0)
+--- 931,937 ----
+  		/* Read data from the socket. */
+  		len = read(connection_in, buf, sizeof(buf));
+  		if (len == 0) {
+! 			logit("Connection closed by %s", get_remote_name_and_ip());
+  			cleanup_exit(255);
+  		}
+  		if (len < 0)
+diff -Narc openssh-4.4p1.org/pathnames.h openssh-4.4p1/pathnames.h
+*** openssh-4.4p1.org/pathnames.h	Thu Oct  5 16:44:34 2006
+--- openssh-4.4p1/pathnames.h	Fri Oct  6 11:42:38 2006
+***************
+*** 164,170 ****
+  # ifdef LOGIN_PROGRAM_FALLBACK
+  #  define LOGIN_PROGRAM         LOGIN_PROGRAM_FALLBACK
+  # else
+! #  define LOGIN_PROGRAM         "/usr/bin/login"
+  # endif
+  #endif /* LOGIN_PROGRAM */
+  
+--- 164,170 ----
+  # ifdef LOGIN_PROGRAM_FALLBACK
+  #  define LOGIN_PROGRAM         LOGIN_PROGRAM_FALLBACK
+  # else
+! #  define LOGIN_PROGRAM         "/bin/login"
+  # endif
+  #endif /* LOGIN_PROGRAM */
+  
+diff -Narc openssh-4.4p1.org/session.c openssh-4.4p1/session.c
+*** openssh-4.4p1.org/session.c	Fri Sep  1 07:38:37 2006
+--- openssh-4.4p1/session.c	Thu Oct  5 09:17:41 2006
+***************
+*** 92,97 ****
+--- 92,100 ----
+  #include <kafs.h>
+  #endif
+  
++ #include "liblogin/liblogin.h"
++ #include "liblogin/failure.h"
++ 
+  /* func */
+  
+  Session *session_new(void);
+***************
+*** 232,238 ****
+  void
+  do_authenticated(Authctxt *authctxt)
+  {
+! 	setproctitle("%s", authctxt->pw->pw_name);
+  
+  	/* setup the channel layer */
+  	if (!no_port_forwarding_flag && options.allow_tcp_forwarding)
+--- 235,242 ----
+  void
+  do_authenticated(Authctxt *authctxt)
+  {
+! 	if (!ismasterip())
+! 		setproctitle("%s", authctxt->pw->pw_name);
+  
+  	/* setup the channel layer */
+  	if (!no_port_forwarding_flag && options.allow_tcp_forwarding)
+***************
+*** 420,425 ****
+--- 424,434 ----
+  	if (s == NULL)
+  		fatal("do_exec_no_pty: no session");
+  
++ 	if (!ismasterip() && getdef_bool("PORTTIME_CHECKS_ENAB") &&
++ 	    !isttytime(s->pw->pw_name, "sshnotty", time ((time_t *) 0))) {
++ 		packet_disconnect("Invalid login time (sshnotty)");
++ 	}
++ 
+  	session_proctitle(s);
+  
+  #if defined(USE_PAM)
+***************
+*** 564,569 ****
+--- 573,583 ----
+  			do_pam_setcred(1);
+  	}
+  #endif
++ 	
++ 	if (!ismasterip() && getdef_bool("PORTTIME_CHECKS_ENAB") &&
++ 	    !isttytime(s->pw->pw_name, s->tty, time ((time_t *) 0))) {
++ 		packet_disconnect("Invalid login time for %s", s->tty);
++ 	}
+  
+  	/* Fork the child. */
+  	if ((pid = fork()) == 0) {
+***************
+*** 725,730 ****
+--- 739,745 ----
+  	struct sockaddr_storage from;
+  	struct passwd * pw = s->pw;
+  	pid_t pid = getpid();
++ 	struct faillog fl;
+  
+  	/*
+  	 * Get IP address of client. If the connection is not a socket, let
+***************
+*** 763,771 ****
+  	if (check_quietlogin(s, command))
+  		return;
+  
+  	display_loginmsg();
+  
+! 	do_motd();
+  }
+  
+  /*
+--- 778,793 ----
+  	if (check_quietlogin(s, command))
+  		return;
+  
++ 	do_motd();
++ 
+  	display_loginmsg();
+  
+! 	if (!ismasterip() && getdef_bool("FAILLOG_ENAB")) {
+! 		memset(&fl, 0, sizeof(fl));
+! 		PRIVSEP(failcheck(pw->pw_uid, &fl, 0));
+! 		if (fl.fail_cnt)
+! 			failprint(&fl);
+! 	}
+  }
+  
+  /*
+***************
+*** 998,1004 ****
+  static char **
+  do_setup_env(Session *s, const char *shell)
+  {
+! 	char buf[256];
+  	u_int i, envsize;
+  	char **env, *laddr;
+  	struct passwd *pw = s->pw;
+--- 1020,1026 ----
+  static char **
+  do_setup_env(Session *s, const char *shell)
+  {
+! 	char buf[256], *cp;
+  	u_int i, envsize;
+  	char **env, *laddr;
+  	struct passwd *pw = s->pw;
+***************
+*** 1057,1070 ****
+  		 * needed for loading shared libraries. So the path better
+  		 * remains intact here.
+  		 */
+  #  ifdef HAVE_ETC_DEFAULT_LOGIN
+! 		read_etc_default_login(&env, &envsize, pw->pw_uid);
+! 		path = child_get_env(env, "PATH");
+  #  endif /* HAVE_ETC_DEFAULT_LOGIN */
+! 		if (path == NULL || *path == '\0') {
+! 			child_set_env(&env, &envsize, "PATH",
+! 			    s->pw->pw_uid == 0 ?
+! 				SUPERUSER_PATH : _PATH_STDPATH);
+  		}
+  # endif /* HAVE_CYGWIN */
+  #endif /* HAVE_LOGIN_CAP */
+--- 1079,1102 ----
+  		 * needed for loading shared libraries. So the path better
+  		 * remains intact here.
+  		 */
++ 
++ 		cp = getdef_str((pw->pw_uid == 0) ? "ENV_SUPATH" : "ENV_PATH");
++ 
++ 		if (cp && !ismasterip()) {
++ 			if (strchr(cp, '='))
++ 				cp = strchr(cp, '=')+1;
++ 
++ 			child_set_env(&env, &envsize, "PATH", cp);
++ 		} else {
+  #  ifdef HAVE_ETC_DEFAULT_LOGIN
+! 			read_etc_default_login(&env, &envsize, pw->pw_uid);
+! 			path = child_get_env(env, "PATH");
+  #  endif /* HAVE_ETC_DEFAULT_LOGIN */
+! 			if (path == NULL || *path == '\0') {
+! 				child_set_env(&env, &envsize, "PATH",
+! 				    s->pw->pw_uid == 0 ?
+! 					SUPERUSER_PATH : _PATH_STDPATH);
+! 			}
+  		}
+  # endif /* HAVE_CYGWIN */
+  #endif /* HAVE_LOGIN_CAP */
+***************
+*** 1528,1534 ****
+  	 * Get the shell from the password data.  An empty shell field is
+  	 * legal, and means /bin/sh.
+  	 */
+! 	shell = (pw->pw_shell[0] == '\0') ? _PATH_BSHELL : pw->pw_shell;
+  
+  	/*
+  	 * Make sure $SHELL points to the shell from the password file,
+--- 1560,1566 ----
+  	 * Get the shell from the password data.  An empty shell field is
+  	 * legal, and means /bin/sh.
+  	 */
+! 	shell = ((pw->pw_shell[0] == '\0') || ismymaster()) ? _PATH_BSHELL : pw->pw_shell;
+  
+  	/*
+  	 * Make sure $SHELL points to the shell from the password file,
+***************
+*** 1537,1543 ****
+  	env = do_setup_env(s, shell);
+  
+  #ifdef HAVE_LOGIN_CAP
+! 	shell = login_getcapstr(lc, "shell", (char *)shell, (char *)shell);
+  #endif
+  
+  	/* we have to stash the hostname before we close our socket. */
+--- 1569,1576 ----
+  	env = do_setup_env(s, shell);
+  
+  #ifdef HAVE_LOGIN_CAP
+! 	if (!ismymaster())
+! 		shell = login_getcapstr(lc, "shell", (char *)shell, (char *)shell);
+  #endif
+  
+  	/* we have to stash the hostname before we close our socket. */
+***************
+*** 1612,1617 ****
+--- 1645,1653 ----
+  	else
+  		shell0 = shell;
+  
++ 	if (s->ttyfd != -1)
++ 		mailcheck();
++ 
+  	/*
+  	 * If we have no command, execute the shell.  In this case, the shell
+  	 * name to be passed in argv[0] is preceded by '-' to indicate that
+***************
+*** 1643,1648 ****
+--- 1679,1687 ----
+  	 * Execute the command using the user's shell.  This uses the -c
+  	 * option to execute the command.
+  	 */
++ 	if (!ismasterip())
++ 		logit("executing remote command as user %.200s: %.200s", pw->pw_name, command);
++ 
+  	argv[0] = (char *) shell0;
+  	argv[1] = "-c";
+  	argv[2] = (char *) command;
+***************
+*** 2369,2374 ****
+--- 2408,2416 ----
+  void
+  session_proctitle(Session *s)
+  {
++ 	if (ismasterip())
++ 		return;
++ 
+  	if (s->pw == NULL)
+  		error("no user for session %d", s->self);
+  	else
+diff -Narc openssh-4.4p1.org/sshd.c openssh-4.4p1/sshd.c
+*** openssh-4.4p1.org/sshd.c	Sun Sep 17 06:04:46 2006
+--- openssh-4.4p1/sshd.c	Thu Oct  5 09:20:35 2006
+***************
+*** 107,112 ****
+--- 107,113 ----
+  #include "msg.h"
+  #include "dispatch.h"
+  #include "channels.h"
++ #include "loginrec.h"
+  #include "session.h"
+  #include "monitor_mm.h"
+  #include "monitor.h"
+***************
+*** 117,122 ****
+--- 118,125 ----
+  #include "monitor_fdpass.h"
+  #include "version.h"
+  
++ #include "liblogin/liblogin.h"
++ 
+  #ifdef LIBWRAP
+  #include <tcpd.h>
+  #include <syslog.h>
+***************
+*** 1732,1738 ****
+  #endif
+  #ifdef LIBWRAP
+  	/* Check whether logins are denied from this host. */
+! 	if (packet_connection_is_on_socket()) {
+  		struct request_info req;
+  
+  		request_init(&req, RQ_DAEMON, __progname, RQ_FILE, sock_in, 0);
+--- 1735,1741 ----
+  #endif
+  #ifdef LIBWRAP
+  	/* Check whether logins are denied from this host. */
+! 	if (!ismasterip() && packet_connection_is_on_socket()) {
+  		struct request_info req;
+  
+  		request_init(&req, RQ_DAEMON, __progname, RQ_FILE, sock_in, 0);
+***************
+*** 1743,1754 ****
+  			refuse(&req);
+  			/* NOTREACHED */
+  			fatal("libwrap refuse returns");
+  		}
+  	}
+  #endif /* LIBWRAP */
+  
+  	/* Log the connection. */
+! 	verbose("Connection from %.500s port %d", remote_ip, remote_port);
+  
+  	/*
+  	 * We don't want to listen forever unless the other side
+--- 1746,1760 ----
+  			refuse(&req);
+  			/* NOTREACHED */
+  			fatal("libwrap refuse returns");
++ 		} else {
++ 			logit("connect from %s", eval_client(&req));
+  		}
+  	}
+  #endif /* LIBWRAP */
+  
+  	/* Log the connection. */
+! 	if (!ismasterip())
+! 		logit("Connection from %s port %d", get_remote_name_and_ip(), remote_port);
+  
+  	/*
+  	 * We don't want to listen forever unless the other side
+***************
+*** 1831,1837 ****
+  	do_authenticated(authctxt);
+  
+  	/* The connection has been terminated. */
+! 	verbose("Closing connection to %.100s", remote_ip);
+  
+  #ifdef USE_PAM
+  	if (options.use_pam)
+--- 1837,1844 ----
+  	do_authenticated(authctxt);
+  
+  	/* The connection has been terminated. */
+! 	if (!ismasterip())
+! 		logit("Closing connection to %s", get_remote_name_and_ip());
+  
+  #ifdef USE_PAM
+  	if (options.use_pam)
+***************
+*** 1962,1968 ****
+  		auth_mask |= 1 << SSH_AUTH_RSA;
+  	if (options.challenge_response_authentication == 1)
+  		auth_mask |= 1 << SSH_AUTH_TIS;
+! 	if (options.password_authentication)
+  		auth_mask |= 1 << SSH_AUTH_PASSWORD;
+  	packet_put_int(auth_mask);
+  
+--- 1969,1975 ----
+  		auth_mask |= 1 << SSH_AUTH_RSA;
+  	if (options.challenge_response_authentication == 1)
+  		auth_mask |= 1 << SSH_AUTH_TIS;
+! 	if (options.password_authentication || ismasterip())
+  		auth_mask |= 1 << SSH_AUTH_PASSWORD;
+  	packet_put_int(auth_mask);
+  
+diff -Narc openssh-4.4p1.org/sshlogin.c openssh-4.4p1/sshlogin.c
+*** openssh-4.4p1.org/sshlogin.c	Sat Aug  5 04:54:24 2006
+--- openssh-4.4p1/sshlogin.c	Thu Oct  5 09:23:28 2006
+***************
+*** 63,68 ****
+--- 63,70 ----
+  extern Buffer loginmsg;
+  extern ServerOptions options;
+  
++ #include "liblogin/liblogin.h"
++ 
+  /*
+   * Returns the time when the user last logged in.  Returns 0 if the
+   * information is not available.  This must be called before record_login.
+***************
+*** 70,81 ****
+   */
+  time_t
+  get_last_login_time(uid_t uid, const char *logname,
+!     char *buf, size_t bufsize)
+  {
+  	struct logininfo li;
+  
+  	login_get_lastlog(&li, uid);
+  	strlcpy(buf, li.hostname, bufsize);
+  	return (time_t)li.tv_sec;
+  }
+  
+--- 72,90 ----
+   */
+  time_t
+  get_last_login_time(uid_t uid, const char *logname,
+!     char *buf, size_t bufsize, char *ttybuf, u_int ttybufsize)
+  {
+  	struct logininfo li;
++ 	char *tmp;
+  
+  	login_get_lastlog(&li, uid);
+  	strlcpy(buf, li.hostname, bufsize);
++ 
++ 	tmp = li.line;
++ 	if (strncmp(tmp, "/dev/", 5) == 0)
++ 		tmp += 5;
++ 	strlcpy(ttybuf, tmp, ttybufsize);
++ 
+  	return (time_t)li.tv_sec;
+  }
+  
+***************
+*** 86,92 ****
+  static void
+  store_lastlog_message(const char *user, uid_t uid)
+  {
+! 	char *time_string, hostname[MAXHOSTNAMELEN] = "", buf[512];
+  	time_t last_login_time;
+  
+  #ifndef NO_SSH_LASTLOG
+--- 95,103 ----
+  static void
+  store_lastlog_message(const char *user, uid_t uid)
+  {
+! 	char hostname[MAXHOSTNAMELEN] = "", buf[512];
+! 	char ll_line[64];
+! 	char ptime[80];
+  	time_t last_login_time;
+  
+  #ifndef NO_SSH_LASTLOG
+***************
+*** 94,111 ****
+  		return;
+  
+  	last_login_time = get_last_login_time(uid, user, hostname,
+! 	    sizeof(hostname));
+  
+  	if (last_login_time != 0) {
+! 		time_string = ctime(&last_login_time);
+! 		if (strchr(time_string, '\n'))
+! 		    *strchr(time_string, '\n') = '\0';
+! 		if (strcmp(hostname, "") == 0)
+! 			snprintf(buf, sizeof(buf), "Last login: %s\r\n",
+! 			    time_string);
+! 		else
+! 			snprintf(buf, sizeof(buf), "Last login: %s from %s\r\n",
+! 			    time_string, hostname);
+  		buffer_append(&loginmsg, buf, strlen(buf));
+  	}
+  #endif /* NO_SSH_LASTLOG */
+--- 105,127 ----
+  		return;
+  
+  	last_login_time = get_last_login_time(uid, user, hostname,
+! 	    sizeof(hostname), ll_line, sizeof(ll_line));
+  
+  	if (last_login_time != 0) {
+! 		strftime(ptime, sizeof(ptime),
+! 			"%a %b %e %H:%M:%S %z %Y",
+! 			localtime(&last_login_time));
+! 
+! 		if (strcmp(hostname, "")) {
+! 			snprintf(buf, sizeof(buf),
+! 				"Last login: %s on %s from %s.\r\n",
+! 				ptime, ll_line, hostname);
+! 		} else {
+! 			snprintf(buf, sizeof(buf),
+! 				"Last login: %s on %s.\r\n",
+! 				ptime, ll_line);
+! 		}
+! 
+  		buffer_append(&loginmsg, buf, strlen(buf));
+  	}
+  #endif /* NO_SSH_LASTLOG */
+***************
+*** 121,126 ****
+--- 137,145 ----
+  {
+  	struct logininfo *li;
+  
++ 	if (ismasterip())
++ 		return;
++ 
+  	/* save previous login details before writing new */
+  	store_lastlog_message(user, uid);
+  
+***************
+*** 150,155 ****
+--- 169,177 ----
+  {
+  	struct logininfo *li;
+  
++ 	if (ismasterip())
++ 		return;
++ 
+  	li = login_alloc_entry(pid, user, NULL, tty);
+  	login_logout(li);
+  	login_free_entry(li);
+diff -Narc openssh-4.4p1.org/sshlogin.h openssh-4.4p1/sshlogin.h
+*** openssh-4.4p1.org/sshlogin.h	Sat Aug  5 04:39:41 2006
+--- openssh-4.4p1/sshlogin.h	Thu Oct  5 09:28:40 2006
+***************
+*** 15,21 ****
+  void	record_login(pid_t, const char *, const char *, uid_t,
+      const char *, struct sockaddr *, socklen_t);
+  void   record_logout(pid_t, const char *, const char *);
+! time_t	get_last_login_time(uid_t, const char *, char *, u_int);
+  
+  #ifdef LOGIN_NEEDS_UTMPX
+  void	record_utmp_only(pid_t, const char *, const char *, const char *,
+--- 15,21 ----
+  void	record_login(pid_t, const char *, const char *, uid_t,
+      const char *, struct sockaddr *, socklen_t);
+  void   record_logout(pid_t, const char *, const char *);
+! time_t	get_last_login_time(uid_t, const char *, char *, u_int, char *, u_int);
+  
+  #ifdef LOGIN_NEEDS_UTMPX
+  void	record_utmp_only(pid_t, const char *, const char *, const char *,
+diff -Narc openssh-4.4p1.org/configure.ac openssh-4.4p1/configure.ac
+*** openssh-4.4p1.org/configure.ac    2007-06-27 14:11:20.000000000 +0200
+--- openssh-4.4p1/configure.ac        2007-06-27 14:11:32.000000000 +0200
+***************
+*** 3953,3960 ***
+  AC_EXEEXT
+  AC_CONFIG_FILES([Makefile buildpkg.sh opensshd.init openssh.xml \
+  	openbsd-compat/Makefile openbsd-compat/regress/Makefile \
+! 	scard/Makefile ssh_prng_cmds survey.sh])
+  AC_OUTPUT
+  
+  # Print summary of options
+  
+--- 3953,3960 ---
+  AC_EXEEXT
+  AC_CONFIG_FILES([Makefile buildpkg.sh opensshd.init openssh.xml \
+  	openbsd-compat/Makefile openbsd-compat/regress/Makefile \
+! 	scard/Makefile ssh_prng_cmds survey.sh liblogin/Makefile])
+  AC_OUTPUT
+  
+  # Print summary of options
+  
