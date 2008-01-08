@@ -1,0 +1,19 @@
+--- Makefile.orig	2008-01-08 17:18:57.000000000 +0100
++++ Makefile	2008-01-08 17:20:48.000000000 +0100
+@@ -49,6 +49,7 @@
+ CC = gcc
+ CFLAGS = -O3 -Wall
+ 
++KERNEL_INCLUDE = -I$(KERNEL_SRC)/include
+ 
+ 
+ all: modules libipt_ipp2p.so
+@@ -63,7 +64,7 @@
+ 
+ 
+ libipt_ipp2p.so: libipt_ipp2p.c ipt_ipp2p.h
+-	$(CC) $(CFLAGS) $(IPTABLES_OPTION) $(IPTABLES_INCLUDE) -fPIC -c libipt_ipp2p.c
++	$(CC) $(CFLAGS) $(IPTABLES_OPTION) $(IPTABLES_INCLUDE) $(KERNEL_INCLUDE) -fPIC -c libipt_ipp2p.c
+ 	$(CC) -shared -o libipt_ipp2p.so libipt_ipp2p.o
+ 
+ clean:
