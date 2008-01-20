@@ -11,7 +11,7 @@ SRC_URI="ftp://ftp.ibiblio.org/pub/Linux/utils/console/vlock-1.3.tar.gz"
 LICENSE="GPL-2"
 SLOT="0"
 KEYWORDS="alpha amd64 ia64 ppc sparc x86"
-IUSE=""
+IUSE="pam"
 
 DEPEND="pam? ( sys-libs/pam )"
 
