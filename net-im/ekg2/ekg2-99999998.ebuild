@@ -5,7 +5,7 @@
 WANT_AUTOCONF=latest
 WANT_AUTOMAKE=latest
 
-inherit eutils perl-module autotools subversion
+inherit eutils perl-module autotools cvs
 
 DESCRIPTION="Text based Instant Messenger and IRC client that supports protocols like Jabber and Gadu-Gadu"
 HOMEPAGE="http://www.ekg2.org/"
@@ -43,12 +43,13 @@ pkg_setup() {
 	fi
 }
 
-ESVN_REPO_URI="https://toxygen.net/svn/ekg2/trunk/"
+ECVS_SERVER="ekg2.org:/home/cvs"
+ECVS_MODULE="ekg2"
 
-#S=${WORKDIR}/${ECVS_MODULE}
+S=${WORKDIR}/${ECVS_MODULE}
 
 src_unpack() {
-	subversion_src_unpack
+	cvs_src_unpack
 	cd ${S}
 
 	# Ekg2 has no debug configure option
