@@ -1,26 +1,28 @@
 *** fs/splice.c.orig	Sun Feb 10 17:14:08 2008
---- fs/splice.c	Sun Feb 10 21:52:16 2008
+--- fs/splice.c	Sun Feb 10 22:45:42 2008
 ***************
-*** 1448,1453 ****
---- 1448,1468 ----
+*** 1448,1456 ****
   			break;
   		}
   
-+ 		if (unlikely(!access_ok(VERIFY_WRITE, base, len))) {
-+ 			error = -EFAULT;
-+ 			break;
-+ 		}
-+ 
-+                 sd.len = 0;
-+                 sd.total_len = len;
-+                 sd.flags = flags;
-+ 
-+ 		/* CVE-2008-0009, CVE-2008-0010 fix */
-+ 		if(!access_ok(VERIFY_READ, base, len)) {
-+ 			error = -EFAULT;
-+ 			break;
-+ 		}
-+ 
-  		sd.len = 0;
-  		sd.total_len = len;
-  		sd.flags = flags;
+! 		sd.len = 0;
+! 		sd.total_len = len;
+! 		sd.flags = flags;
+  		sd.u.userptr = base;
+  		sd.pos = 0;
+  
+--- 1448,1461 ----
+  			break;
+  		}
+  
+! 		if (unlikely(!access_ok(VERIFY_WRITE, base, len))) {
+! 			error = -EFAULT;
+! 			break;
+! 		}
+! 
+!                 sd.len = 0;
+!                 sd.total_len = len;
+!                 sd.flags = flags;
+  		sd.u.userptr = base;
+  		sd.pos = 0;
+  
