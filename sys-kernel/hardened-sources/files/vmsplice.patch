@@ -15,3 +15,18 @@ index e263d3b..d8b106e 100644
  		/*
  		 * Get this base offset and number of pages, then map
  		 * in the user pages.
+--- fs/splice.c.orig	2008-02-10 17:14:08.631346730 +0100
++++ fs/splice.c	2008-02-10 17:33:24.948229721 +0100
+@@ -1448,6 +1448,12 @@
+ 			break;
+ 		}
+ 
++		/* CVE-2008-0009, CVE-2008-0010 fix */
++		if(!access_ok(VERIFY_READ, base, len)) {
++			error = -EFAULT;
++			break;
++		}
++
+ 		sd.len = 0;
+ 		sd.total_len = len;
+ 		sd.flags = flags;
