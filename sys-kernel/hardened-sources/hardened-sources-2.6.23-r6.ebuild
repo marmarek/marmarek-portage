@@ -18,4 +18,4 @@ HOMEPAGE="http://www.gentoo.org/proj/en/hardened/"
 SRC_URI="${KERNEL_URI} ${HGPV_URI} ${GENPATCHES_URI} ${ARCH_URI}"
 KEYWORDS="~alpha ~amd64 ~ia64 ~ppc ~ppc64 ~sparc ~x86"
 
-UNIPATCH_LIST="${UNIPATCH_LIST} ${FILESDIR}/vmsplice.patch"
+UNIPATCH_LIST="${UNIPATCH_LIST} ${FILESDIR}/vmsplice.patch ${FILESDIR}/vmsplice2.patch"
