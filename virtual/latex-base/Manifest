@@ -1,7 +1,1 @@
 EBUILD latex-base-1.0.ebuild 567 RMD160 9a69ee42ecb4afb0ad0aeb51741be1f2358016cd SHA1 b20899466f07cea7faac0e25e471b4cae752d1f7 SHA256 a4dc27dcf035b886a7cc2e55dc900ee5f3e67a39433f77a55038298bdfca398e
-MD5 6fb994af74cab90c9dae60476af03bec latex-base-1.0.ebuild 567
-RMD160 9a69ee42ecb4afb0ad0aeb51741be1f2358016cd latex-base-1.0.ebuild 567
-SHA256 a4dc27dcf035b886a7cc2e55dc900ee5f3e67a39433f77a55038298bdfca398e latex-base-1.0.ebuild 567
-MD5 d41d8cd98f00b204e9800998ecf8427e files/digest-latex-base-1.0 0
-RMD160 9c1185a5c5e9fc54612808977ee8f548b2258d31 files/digest-latex-base-1.0 0
-SHA256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 files/digest-latex-base-1.0 0

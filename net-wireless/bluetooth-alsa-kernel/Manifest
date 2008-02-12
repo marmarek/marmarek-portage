@@ -1,8 +1,2 @@
 DIST btsco-0.42.tar.gz 538722 RMD160 8b3e46d36d47c302c3b7f7ded2e769696cd3b5ca SHA1 c5d735516419692068e3b367f4c8130330e0db12 SHA256 e4f5bc9be311a746bd37f5607d3c225462d7d9294e8b3c692f9a39717b65d843
 EBUILD bluetooth-alsa-kernel-0.42.ebuild 1427 RMD160 4ddb2c21e2147e9a32aa4a73edd9b884912eecdc SHA1 d89dd3ade223f632b1880ef45d7020fcd2aa2a34 SHA256 f1ec27d2d98f080e9fedf4e64224045ced385234abc2c758ee7bcba7e65b7feb
-MD5 0f74804bf4ae1a4c088944b832badfbe bluetooth-alsa-kernel-0.42.ebuild 1427
-RMD160 4ddb2c21e2147e9a32aa4a73edd9b884912eecdc bluetooth-alsa-kernel-0.42.ebuild 1427
-SHA256 f1ec27d2d98f080e9fedf4e64224045ced385234abc2c758ee7bcba7e65b7feb bluetooth-alsa-kernel-0.42.ebuild 1427
-MD5 3597ace54b4356d7bff888035a0885ee files/digest-bluetooth-alsa-kernel-0.42 232
-RMD160 ae6497476b2b2fa3c55e9063058646e865440597 files/digest-bluetooth-alsa-kernel-0.42 232
-SHA256 61298372d12472f915c807b3ac56aa3876c22af2964bb88a2de17320570ae7f7 files/digest-bluetooth-alsa-kernel-0.42 232
