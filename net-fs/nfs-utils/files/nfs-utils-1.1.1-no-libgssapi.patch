@@ -1,0 +1,12 @@
+*** configure.ac.org	Sun Jun 24 00:49:13 2007
+--- configure.ac	Sun Jun 24 00:49:59 2007
+***************
+*** 185,191 ****
+        [AC_MSG_ERROR([Unable to locate information required to use librpcsecgss.  If you have pkgconfig installed, you might try setting environment variable PKG_CONFIG_PATH to /usr/local/lib/pkgconfig])
+        ]
+       )
+-     PKG_CHECK_MODULES(GSSAPI, libgssapi >= 0.11)
+      fi
+  
+  fi
+--- 185,190 ----
