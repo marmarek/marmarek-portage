@@ -1,0 +1,12 @@
+--- src/Makefile.am	2007-09-06 15:19:00.000000000 +0200
++++ src/Makefile.am.new	2007-09-27 11:21:56.000000000 +0200
+@@ -1,7 +1,7 @@
+ lib_LTLIBRARIES = librpcsecgss.la
+-librpcsecgss_la_CPPFLAGS = $(GSSGLUE_CFLAGS)
++librpcsecgss_la_CPPFLAGS = $(GSSAPI_CFLAGS)
+ librpcsecgss_la_LDFLAGS = -version-info 3:0:0
+-librpcsecgss_la_LIBADD = $(GSSGLUE_LIBS)
++librpcsecgss_la_LIBADD = $(GSSAPI_LIBS)
+ librpcsecgss_la_SOURCES = \
+ 	auth_gss.c authgss_prot.c svc.c svc_run.c svc_auth.c \
+ 	svc_auth_none.c svc_auth_unix.c svc_auth_gss.c \
