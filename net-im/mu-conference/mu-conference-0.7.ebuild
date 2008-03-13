@@ -31,26 +31,28 @@ src_compile() {
 }
 
 src_install() {
-	dodir /etc/jabber /usr/lib/jabberd /var/log/jabber/conference
-	keepdir /var/log/jabber/conference/
+	dodir /etc/jabber /usr/lib/jabberd /var/log/muc /var/spool/muc
+	keepdir /var/log/muc /var/spool/muc
 
 	dosbin src/mu-conference
 
 	insinto /etc/jabber
-	doins  ${FILESDIR}/muctrans.xml muc-default.xml
+	doins  ${FILESDIR}/muc-default.xml muc-default.xml
 
-	newconfd ${FILESDIR}/mu-conference-conf.d muc-transport
+	newconfd ${FILESDIR}/mu-conference-conf.d mu-conference
 
-	newinitd ${FILESDIR}/muc-transport.init-r2 muc-transport
+	newinitd ${FILESDIR}/mu-conference-init.d mu-conference
 
 	dodoc README FAQ README.jcr ${FILESDIR}/README.Gentoo README.sql
 	dodoc mu-conference.sql 
 
-	fowners jabber:jabber /var/log/jabber/conference
+	fowners jabber:jabber /var/log/muc
+	fperms g-x /var/log/muc
+	fperms g+rw /var/log/muc
 
-	fperms g-x /var/log/jabber/conference
-
-	fperms g+rw /var/log/jabber/conference
+	fowners jabber:jabber /var/spool/muc
+	fperms g-x /var/spool/muc
+	fperms g+rw /var/spool/muc
 }
 
 pkg_postinst() {
