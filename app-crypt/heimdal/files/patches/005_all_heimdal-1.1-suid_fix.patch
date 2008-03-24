@@ -1,0 +1,24 @@
+diff -ur heimdal-1.1-/appl/otp/Makefile.am heimdal-1.1/appl/otp/Makefile.am
+--- heimdal-1.1-/appl/otp/Makefile.am	2008-03-24 01:08:56.149643000 +0100
++++ heimdal-1.1/appl/otp/Makefile.am	2008-03-24 01:09:39.097884555 +0100
+@@ -8,6 +8,7 @@
+ bin_SUIDS = otp
+ otp_SOURCES = otp.c otp_locl.h
+ otpprint_SOURCES = otpprint.c otp_locl.h
++otp_LDFLAGS = -Wl,-z,now
+ 
+ man_MANS = otp.1  otpprint.1
+ 
+diff -ur heimdal-1.1-/appl/su/Makefile.am heimdal-1.1/appl/su/Makefile.am
+--- heimdal-1.1-/appl/su/Makefile.am	2008-03-24 01:08:56.129611000 +0100
++++ heimdal-1.1/appl/su/Makefile.am	2008-03-24 01:10:04.632179651 +0100
+@@ -7,6 +7,7 @@
+ bin_PROGRAMS = su
+ bin_SUIDS = su
+ su_SOURCES = su.c supaths.h
++su_LDFLAGS = -Wl,-z,now
+ man_MANS = su.1
+ 
+ LDADD = $(LIB_kafs) \
+Only in heimdal-1.1/appl/su: Makefile.am.orig
+Only in heimdal-1.1/appl/su: Makefile.am.rej
