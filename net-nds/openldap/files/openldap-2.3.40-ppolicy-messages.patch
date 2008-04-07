@@ -1,0 +1,62 @@
+--- servers/slapd/overlays/ppolicy.c.orig	2008-04-07 02:32:04.372533510 +0200
++++ servers/slapd/overlays/ppolicy.c	2008-04-07 02:39:41.447328685 +0200
+@@ -572,7 +572,7 @@
+ }
+ 
+ static int
+-check_password_quality( struct berval *cred, PassPolicy *pp, LDAPPasswordPolicyError *err, Entry *e )
++check_password_quality( struct berval *cred, PassPolicy *pp, LDAPPasswordPolicyError *err, Entry *e, char **txt_result )
+ {
+ 	int rc = LDAP_SUCCESS, ok = LDAP_SUCCESS;
+ 	char *ptr = cred->bv_val;
+@@ -650,6 +650,7 @@
+ 					Debug(LDAP_DEBUG_ANY,
+ 						"check_password_quality: module error: (%s) %s.[%d]\n",
+ 						pp->pwdCheckModule, txt ? txt : "", ok );
++					*txt_result = strdup(txt);
+ 					free(txt);
+ 				}
+ 			}
+@@ -1300,13 +1301,14 @@
+ 		if (pp.pwdCheckQuality > 0 && !be_isroot( op )) {
+ 			struct berval *bv = &(pa->a_vals[0]);
+ 			int rc, send_ctrl = 0;
++			char *txt = NULL;
+ 			LDAPPasswordPolicyError pErr = PP_noError;
+ 
+ 			/* Did we receive a password policy request control? */
+ 			if ( op->o_ctrlflag[ppolicy_cid] ) {
+ 				send_ctrl = 1;
+ 			}
+-			rc = check_password_quality( bv, &pp, &pErr, op->ora_e );
++			rc = check_password_quality( bv, &pp, &pErr, op->ora_e, &txt );
+ 			if (rc != LDAP_SUCCESS) {
+ 				LDAPControl **oldctrls = NULL;
+ 				op->o_bd->bd_info = (BackendInfo *)on->on_info;
+@@ -1315,7 +1317,10 @@
+ 					ctrl = create_passcontrol( -1, -1, pErr );
+ 					oldctrls = add_passcontrol( op, rs, ctrl );
+ 				}
+-				send_ldap_error( op, rs, rc, "Password fails quality checking policy" );
++				send_ldap_error( op, rs, rc, txt ? txt : "Password fails quality checking policy" );
++				if (txt) {
++					free(txt);
++				}
+ 				if ( send_ctrl ) {
+ 					ctrls_cleanup( op, rs, oldctrls );
+ 				}
+@@ -1754,10 +1759,12 @@
+ 	bv = newpw.bv_val ? &newpw : &addmod->sml_values[0];
+ 	if (pp.pwdCheckQuality > 0) {
+ 
+-		rc = check_password_quality( bv, &pp, &pErr, e );
++		char *txt = NULL;
++
++		rc = check_password_quality( bv, &pp, &pErr, e, &txt );
+ 		if (rc != LDAP_SUCCESS) {
+ 			rs->sr_err = rc;
+-			rs->sr_text = "Password fails quality checking policy";
++			rs->sr_text = txt ? txt : "Password fails quality checking policy";
+ 			goto return_results;
+ 		}
+ 	}
