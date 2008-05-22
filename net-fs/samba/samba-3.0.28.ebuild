@@ -11,7 +11,7 @@ DESCRIPTION="A suite of SMB and CIFS client/server programs for UNIX"
 HOMEPAGE="http://www.samba.org/"
 SRC_URI="mirror://samba/${MY_P}.tar.gz
 	mirror://samba/old-versions/${MY_P}.tar.gz
-	oav? (http://www.openantivirus.org/download/${VSCAN}.tar.gz)"
+	oav? ( http://www.openantivirus.org/download/${VSCAN}.tar.gz )"
 LICENSE="GPL-2"
 SLOT="0"
 KEYWORDS="alpha amd64 ~arm hppa ia64 ~mips ppc ppc64 ~s390 ~sh sparc ~sparc-fbsd x86 ~x86-fbsd"
