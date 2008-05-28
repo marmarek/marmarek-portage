@@ -55,6 +55,10 @@ src_unpack() {
 	# Bug #196015 (upstream: #5021)
 	epatch "${FILESDIR}/3.0.26a-invalid-free-fix.patch"
 
+	#backported from 3.0.28a
+	epatch "${FILESDIR}/3.0.28-libcap_detection.patch" \
+		"${FILESDIR}/3.0.28-fix_broken_readdir_detection.patch"
+
 	# Ok, agreed, this is ugly. But it avoids a patch we
 	# need for every samba version and we don't need autotools
 	sed -i \
