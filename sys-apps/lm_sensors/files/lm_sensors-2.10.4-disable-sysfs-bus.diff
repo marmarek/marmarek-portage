@@ -1,0 +1,10 @@
+--- lib/sysfs.c.orig	2008-06-26 17:30:48.640477035 +0200
++++ lib/sysfs.c	2008-06-26 17:29:00.812002422 +0200
+@@ -184,6 +184,7 @@
+ 	sensors_bus entry;
+ 	int ret = 0;
+ 
++	return 0;
+ 	if (!(cls = sysfs_open_class("i2c-adapter"))) {
+ 		if (errno && errno != ENOENT)
+ 			ret = -SENSORS_ERR_PROC;
