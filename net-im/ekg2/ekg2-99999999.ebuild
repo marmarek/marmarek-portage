@@ -56,6 +56,7 @@ src_unpack() {
 	! use debug && epatch ${FILESDIR}/${PN}-20061202-no-default-debug.patch
 
 	epatch ${FILESDIR}/${PN}-20061202-intl.patch
+	epatch ${FILESDIR}/${PN}-sim-unicode.patch
 	NOCONFIGURE=yes ./autogen.sh
 }
 
