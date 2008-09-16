@@ -24,7 +24,8 @@ SRC_URI="mirror://openbsd/OpenSSH/portable/${PARCH}.tar.gz
 LICENSE="as-is"
 SLOT="0"
 KEYWORDS="~alpha ~amd64 ~arm ~hppa ~ia64 ~m68k ~mips ~ppc ~ppc64 ~s390 ~sh ~sparc ~sparc-fbsd ~x86 ~x86-fbsd"
-IUSE="static pam tcpd kerberos skey selinux X509 ldap smartcard hpn libedit X"
+IUSE="static pam tcpd kerberos skey selinux X509 ldap smartcard hpn libedit X
+secrsa"
 
 RDEPEND="pam? ( virtual/pam )
 	kerberos? ( virtual/krb5 )
@@ -93,10 +94,12 @@ src_unpack() {
 	sed -i "s:-lcrypto:$(pkg-config --libs openssl):" configure{,.ac} || die
 
 	#marmarek
-	if use ldap ; then
-		epatch "${FILESDIR}"/${PN}-5.1_p1-secure-rsa-and-pubkey-auth-ldap.diff
-	else
-		epatch "${FILESDIR}"/${PN}-4.5_p1-secure-rsa-and-pubkey-auth.diff
+	if use secrsa; then
+		if use ldap ; then
+			epatch "${FILESDIR}"/${PN}-5.1_p1-secure-rsa-and-pubkey-auth-ldap.diff
+		else
+			epatch "${FILESDIR}"/${PN}-4.5_p1-secure-rsa-and-pubkey-auth.diff
+		fi
 	fi
 
 	eautoreconf
