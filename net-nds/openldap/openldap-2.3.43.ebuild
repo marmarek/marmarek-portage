@@ -16,7 +16,8 @@ SRC_URI="mirror://openldap/openldap-release/${P}.tgz"
 LICENSE="OPENLDAP"
 SLOT="0"
 KEYWORDS="alpha amd64 ~arm hppa ia64 ~mips ppc ppc64 ~s390 ~sh sparc ~sparc-fbsd x86 ~x86-fbsd"
-IUSE="berkdb crypt debug gdbm ipv6 kerberos minimal odbc overlays perl samba sasl slp smbkrb5passwd ssl tcpd selinux"
+IUSE="berkdb crypt debug gdbm ipv6 kerberos minimal odbc overlays perl samba
+sasl slp smbkrb5passwd ssl tcpd selinux passlastchange"
 
 # note that the 'samba' USE flag pulling in OpenSSL is NOT an error.  OpenLDAP
 # uses OpenSSL for LanMan/NTLM hashing (which is used in some enviroments, like
@@ -232,8 +233,10 @@ src_unpack() {
 	fi
 
 	epatch "${FILESDIR}"/${PN}-2.3.40-ppolicy-messages.patch
-
-	epatch "${FILESDIR}"/${PN}-2.3.43-smbk5pwd-shadowLastChange.patch
+	
+	if use passlastchange; then
+		epatch "${FILESDIR}"/${PN}-2.3.43-smbk5pwd-shadowLastChange.patch
+	fi
 }
 
 src_compile() {
