@@ -76,7 +76,7 @@ amanda_variable_setup() {
 	[ -z "${AMANDA_GROUP_NAME}" ] && AMANDA_GROUP_NAME=amanda
 	[ -z "${AMANDA_USER_NAME}" ] && AMANDA_USER_NAME=amanda
 	[ -z "${AMANDA_USER_UID}" ] && AMANDA_USER_UID=87
-	[ -z "${AMANDA_USER_SH}" ] && AMANDA_USER_SH=-1
+	[ -z "${AMANDA_USER_SH}" ] && AMANDA_USER_SH=/bin/bash
 	[ -z "${AMANDA_USER_HOMEDIR}" ] && AMANDA_USER_HOMEDIR=/var/lib/amanda
 	[ -z "${AMANDA_USER_GROUPS}" ] && AMANDA_USER_GROUPS="${AMANDA_GROUP_NAME}"
 
