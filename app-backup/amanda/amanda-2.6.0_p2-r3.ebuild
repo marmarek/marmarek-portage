@@ -400,6 +400,9 @@ src_install() {
 	insinto /etc/xinetd.d
 	newins "${MYFILESDIR}"/amanda-xinetd-2.6.0_p2-r2 amanda
 
+	# dirty hack
+	mv ${D}/var/lib/lib/amanda/example ${D}/etc/amanda/
+	mv ${D}/var/lib/lib/amanda/template.d ${D}/etc/amanda/
 }
 
 do_initial() {
