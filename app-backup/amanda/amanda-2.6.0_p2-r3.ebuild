@@ -152,6 +152,8 @@ src_unpack() {
 	#sed -i 's,amanda_working_ipv6,amanda_cv_working_ipv6,g' \
 	#	"${S}"/configure.in || die "failed to sed"
 	# rm -f "${S}"/acinclude.m4
+
+	epatch "${FILESDIR}"/${PN}-2.6.0p2-amtoc.patch
 	eautomake
 
 	# now the real fun
@@ -403,6 +405,7 @@ src_install() {
 	# dirty hack
 	mv ${D}/var/lib/lib/amanda/example ${D}/etc/amanda/
 	mv ${D}/var/lib/lib/amanda/template.d ${D}/etc/amanda/
+	rmdir ${D}/var/lib/lib/amanda ${D}/var/lib/lib
 }
 
 do_initial() {
