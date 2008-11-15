@@ -1,6 +1,6 @@
 # Copyright 1999-2008 Gentoo Foundation
 # Distributed under the terms of the GNU General Public License v2
-# $Header: /var/cvsroot/gentoo-x86/net-misc/openssh/openssh-5.1_p1-r1.ebuild,v 1.3 2008/08/29 08:25:09 vapier Exp $
+# $Header: /var/cvsroot/gentoo-x86/net-misc/openssh/openssh-5.1_p1-r2.ebuild,v 1.2 2008/11/03 08:53:13 vapier Exp $
 
 inherit eutils flag-o-matic ccc multilib autotools pam
 
@@ -92,6 +92,9 @@ src_unpack() {
 
 	sed -i "s:-lcrypto:$(pkg-config --libs openssl):" configure{,.ac} || die
 
+	epatch "${FILESDIR}"/${P}-null-banner.patch #244222
+	epatch "${FILESDIR}"/${P}-escaped-banner.patch #244222
+
 	#marmarek
 	if use secrsa; then
 		if use ldap ; then
@@ -127,7 +130,7 @@ src_compile() {
 		--with-privsep-user=sshd \
 		--with-md5-passwords \
 		--with-ssl-engine \
-		$(use ldap && echo $(use_with ldap)) \
+		${LDAP_PATCH:+$(use ldap && use_with ldap)} \
 		$(use_with libedit) \
 		$(use_with kerberos kerberos5 /usr) \
 		$(use_with tcpd tcp-wrappers) \
