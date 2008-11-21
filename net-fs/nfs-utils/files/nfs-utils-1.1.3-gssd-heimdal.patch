@@ -11,13 +11,14 @@
 -				memcmp(creds.server->data[0].data,
 -						"krbtgt", 6) == 0 &&
 -				data_is_equal(creds.server->data[1],
+-					      principal->realm) &&
 +		if (creds.server->name.name_string.len == 2 &&
 +				strcmp(creds.server->realm,
 +					      principal->realm) == 0 &&
 +				strcmp(creds.server->name.name_string.val[0],
 +						"krbtgt") == 0 &&
 +				strcmp(creds.server->name.name_string.val[1],
- 					      principal->realm) &&
++					      principal->realm) == 0 &&
  				creds.times.endtime > time(NULL))
  			found = 1;
 @@ -995,7 +994,7 @@
