@@ -16,7 +16,7 @@ IUSE=""
 DEPEND=""
 RDEPEND=">=sys-apps/dmidecode-2.2
 	>=dev-perl/XML-Simple-2.12
-	>=dev-perl/Compress-Zlib-1.33
+	>=perl-core/Compress-Zlib-1.33
 	>=dev-perl/Net-IP-1.21
 	>=perl-core/Digest-MD5-2.33
 	>=dev-perl/Net-SSLeay-1.25"
