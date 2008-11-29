@@ -220,7 +220,7 @@ src_compile() {
 	# 2.5.1p2 that it exposes when turned off as well.
 	myconf="${myconf} --with-debugging"
 	# Where to put our files
-	myconf="${myconf} --localstatedir=${AMANDA_USER_HOMEDIR}"
+#	myconf="${myconf} --localstatedir=/var"
 
 	# Samba support
 	myconf="${myconf} `use_with samba smbclient /usr/bin/smbclient`"
@@ -426,14 +426,14 @@ pkg_postinst() {
 	rm "${aux}"
 	rmdir "${ROOT}"/${MYINSTTMPDIR} 2>/dev/null # ignore error
 
-	# Migration of amandates from /etc to $localstatedir/amanda
+	# Migration of amandates from /etc to $localstatedir
 	if [ -f "${ROOT}/etc/amandates" -a \
-		! -f "${ROOT}/${AMANDA_USER_HOMEDIR}/amanda/amandates" ]; then
-		einfo "Migrating amandates from /etc/ to ${AMANDA_USER_HOMEDIR}/amanda"
+		! -f "${ROOT}/${AMANDA_USER_HOMEDIR}/amandates" ]; then
+		einfo "Migrating amandates from /etc/ to ${AMANDA_USER_HOMEDIR}"
 		einfo "A backup is also placed at /etc/amandates.orig"
 		cp -f "${ROOT}/etc/amandates" "${ROOT}/etc/amandates.orig"
-		mkdir -p "${ROOT}/${AMANDA_USER_HOMEDIR}/amanda/"
-		cp -f "${ROOT}/etc/amandates" "${ROOT}/${AMANDA_USER_HOMEDIR}/amanda/amandates"
+		mkdir -p "${ROOT}/${AMANDA_USER_HOMEDIR}"
+		cp -f "${ROOT}/etc/amandates" "${ROOT}/${AMANDA_USER_HOMEDIR}/amandates"
 	fi
 	if [ -f "${ROOT}/etc/amandates" ]; then
 		einfo "If you have migrated safely, please delete /etc/amandates"
