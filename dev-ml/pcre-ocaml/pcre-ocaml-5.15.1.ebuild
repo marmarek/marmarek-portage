@@ -40,7 +40,7 @@ src_install () {
 	findlib_src_install
 
 	# install documentation
-	dodoc README VERSION Changes
+	dodoc README.txt Changes
 
 	if use examples; then
 		insinto /usr/share/doc/${PF}
