@@ -11,7 +11,7 @@ SLOT="0"
 KEYWORDS="~x86"
 IUSE=""
 
-DEPEND="qt"
+DEPEND="x11-libs/qt"
 RDEPEND=""
 
 src_unpack() {
