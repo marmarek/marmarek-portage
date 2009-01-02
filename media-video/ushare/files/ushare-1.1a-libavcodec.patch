@@ -1,0 +1,13 @@
+diff -aru ushare-1.1a.orig/configure ushare-1.1a/configure
+--- ushare-1.1a.orig/configure	2007-12-09 14:03:36.000000000 +0100
++++ ushare-1.1a/configure	2009-01-02 01:16:11.265772238 +0100
+@@ -659,7 +659,7 @@
+     check_cflags -I$libdlnadir
+     check_ldflags -L$libdlnadir
+   fi
+-  check_lib dlna.h dlna_register_all_media_profiles -ldlna || die "Error, can't find libdlna (install it or use --disable-dlna) !"
++  check_lib dlna.h dlna_register_all_media_profiles `pkg-config --libs libdlna` || die "Error, can't find libdlna (install it or use --disable-dlna) !"
+   check_lib_version libdlna $libdlna_min_version || die "Error, libdlna < $libdlna_min_version !"
+   add_cflags -DHAVE_DLNA
+   add_cflags `pkg-config libdlna --cflags`
+Only in ushare-1.1a: configure~
