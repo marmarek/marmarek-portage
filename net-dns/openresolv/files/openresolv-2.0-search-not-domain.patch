@@ -1,0 +1,33 @@
+--- resolvconf.in.orig	2009-02-07 01:31:17.000000000 +0100
++++ resolvconf.in	2009-02-07 01:31:20.000000000 +0100
+@@ -108,19 +108,20 @@
+ 			;;
+ 		"domain "*)
+ 			SEARCH="${LINE#* }"
++			DOMAIN="${LINE#* }"
+ 			;;
+ 		"search "*)
+ 			SEARCH="${LINE#* }"
+ 			;;
+ 		*)
+ 			if [ -z "${LINE}" ]; then
+-				if [ -n "${NS}" -a -n "${SEARCH}" ]; then
++				if [ -n "${NS}" -a -n "${DOMAIN}" ]; then
+ 					NEWNS=
+ 					for N in ${NS}; do
+ 						NEWNS="${NEWNS}${NEWNS:+,}${N}"
+ 					done
+ 					DOMAINS=
+-					for D in ${SEARCH}; do
++					for D in ${DOMAIN}; do
+ 						DOMAINS="${DOMAINS}${DOMAINS:+ }${D}:${NEWNS}"
+ 					done
+ 					echo "DOMAINS=\"\${DOMAINS} ${DOMAINS}\""
+@@ -131,6 +132,7 @@
+ 				fi
+ 				NS=
+ 				SEARCH=
++				DOMAIN=
+ 				PRIVATE=false
+ 				NEW=true
+ 			fi
