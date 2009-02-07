@@ -1,0 +1,29 @@
+diff -ru thinkfinger-0.3.orig/libthinkfinger/libthinkfinger.c thinkfinger-0.3/libthinkfinger/libthinkfinger.c
+--- thinkfinger-0.3.orig/libthinkfinger/libthinkfinger.c	2007-03-30 10:57:24.000000000 +0200
++++ thinkfinger-0.3/libthinkfinger/libthinkfinger.c	2009-02-03 23:45:54.000000000 +0100
+@@ -265,17 +265,6 @@
+ 	int retval = -1;
+ 	char dummy[] = "\x10";
+ 
+-	/* SET_CONFIGURATION 1 -- should not be relevant */
+-	retval = usb_control_msg (handle,	 // usb_dev_handle *dev
+-				   0x00000000,	 // int requesttype
+-				   0x00000009,	 // int request
+-				   0x001,	 // int value
+-				   0x000,	 // int index
+-				   dummy,	 // char *bytes
+-				   0x00000000,	 // int size
+-				   USB_TIMEOUT); // int timeout
+-	if (retval < 0)
+-		goto out;
+ 	retval = usb_control_msg (handle,	 // usb_dev_handle *dev
+ 				   0x00000040,	 // int requesttype
+ 				   0x0000000c,	 // int request
+@@ -285,7 +274,6 @@
+ 				   0x00000001,	 // int size
+ 				   USB_TIMEOUT); // int timeout
+ 
+-out:
+ 	return retval;
+ }
+ 
