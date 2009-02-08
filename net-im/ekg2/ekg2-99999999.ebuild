@@ -13,7 +13,7 @@ SRC_URI=""
 LICENSE="GPL-2"
 SLOT="0"
 
-KEYWORDS="~x86"
+KEYWORDS="~x86 ~amd64"
 
 IUSE="gpm jabber ssl spell jpeg gsm python unicode sqlite sqlite3 gif nogg
 gtk perl xosd debug expat static"
@@ -53,10 +53,9 @@ src_unpack() {
 
 	# Ekg2 has no debug configure option
 	# Instead it features a runtime option which defaults to on
-	! use debug && epatch ${FILESDIR}/${PN}-20061202-no-default-debug.patch
+	#! use debug && epatch ${FILESDIR}/${PN}-20061202-no-default-debug.patch
 
 	epatch ${FILESDIR}/${PN}-20061202-intl.patch
-	epatch ${FILESDIR}/${PN}-sim-unicode.patch
 	NOCONFIGURE=yes ./autogen.sh
 }
 
