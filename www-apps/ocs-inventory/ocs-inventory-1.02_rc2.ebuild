@@ -29,7 +29,10 @@ pkg_setup() {
 }
 
 src_unpack() {
-	unpack ${A}
+	unpack ${MY_P}.tar.gz
+
+	#ignore exit code
+	unzip -qo "${DISTDIR}/${MY_AGENT_W}.zip"
 }
 
 src_compile() {
