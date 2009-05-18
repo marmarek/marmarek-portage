@@ -1,0 +1,20 @@
+--- builddir/Makefile.orig	2009-05-18 00:09:44.896914955 +0200
++++ builddir/Makefile	2009-05-18 00:09:56.048485241 +0200
+@@ -1731,6 +1731,7 @@
+ 
+ lisp.run : $(OBJECTS) modules.o  locale  data
+ 	$(CC) $(CFLAGS) $(MODULE_CLFLAGS) $(OBJECTS) modules.o $(LIBS) -o lisp.run
++	paxctl -s lisp.run
+ 
+ config.lisp : ../src/cfgunix.lisp
+ 	$(CP) ../src/cfgunix.lisp config.lisp
+--- ./src/clisp-link.in.orig	2009-05-18 00:54:34.171287474 +0200
++++ ./src/clisp-link.in	2009-05-18 00:54:58.053655574 +0200
+@@ -97,6 +97,7 @@
+   rm -f modules.c
+   # Generate new ${LISPRUN}
+   verbose ${CC} ${CFLAGS} ${CLFLAGS} modules.o ${LIBS} -o ${LISPRUN}
++  paxctl -s ${LISPRUN}
+ }
+ 
+ # func_tmpdir
