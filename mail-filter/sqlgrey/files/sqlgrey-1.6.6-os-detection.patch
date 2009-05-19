@@ -41,7 +41,7 @@
 +     #
 +     # This is TODO -> how to get all interfaces MTA listens on?
 +     #
-+     my $dst = new Net::IP ("195.205.163.66") or $self->mylog('p0f', 3, Net::IP::Error()), return "unknown";
++     my $dst = new Net::IP ("85.232.234.98") or $self->mylog('p0f', 3, Net::IP::Error()), return "unknown";
 +     my $query = pack("L L L N N S S", $QUERY_MAGIC, $QTYPE_FINGERPRINT, 0x12345678, $src->intip(), $dst->intip(), 0, 25);
 +     my $sock = new IO::Socket::UNIX (Peer => $self->{sqlgrey}{p0f_socket}, Type => SOCK_STREAM);
 +   
