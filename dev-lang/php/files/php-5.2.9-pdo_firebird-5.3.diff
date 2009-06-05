@@ -1,0 +1,507 @@
+diff -Naru php-5.2.9.orig/ext/pdo_firebird/firebird_driver.c php-5.2.9/ext/pdo_firebird/firebird_driver.c
+--- php-5.2.9.orig/ext/pdo_firebird/firebird_driver.c	2008-12-31 12:17:41.000000000 +0100
++++ php-5.2.9/ext/pdo_firebird/firebird_driver.c	2009-06-05 20:59:05.000000000 +0200
+@@ -114,6 +114,16 @@
+ 		RECORD_ERROR(dbh);
+ 	}
+ 
++	if (H->date_format) {
++		efree(H->date_format);
++	}
++	if (H->time_format) {
++		efree(H->time_format);
++	}
++	if (H->timestamp_format) {
++		efree(H->timestamp_format);
++	}
++	
+ 	pefree(H, dbh->is_persistent);
+ 
+ 	return 0;
+@@ -482,6 +492,35 @@
+ 				dbh->auto_commit = Z_BVAL_P(val);
+ 			}
+ 			return 1;
++
++		case PDO_ATTR_FETCH_TABLE_NAMES:
++			convert_to_boolean(val);
++			H->fetch_table_names = Z_BVAL_P(val);
++			return 1;
++
++		case PDO_FB_ATTR_DATE_FORMAT:
++			convert_to_string(val);
++			if (H->date_format) {
++				efree(H->date_format);
++			}
++			spprintf(&H->date_format, 0, "%s", Z_STRVAL_P(val)); 
++			return 1;
++
++		case PDO_FB_ATTR_TIME_FORMAT:
++			convert_to_string(val);
++			if (H->time_format) {
++				efree(H->time_format);
++			}
++			spprintf(&H->time_format, 0, "%s", Z_STRVAL_P(val)); 
++			return 1;
++
++		case PDO_FB_ATTR_TIMESTAMP_FORMAT:
++			convert_to_string(val);
++			if (H->timestamp_format) {
++				efree(H->timestamp_format);
++			}
++			spprintf(&H->timestamp_format, 0, "%s", Z_STRVAL_P(val)); 
++			return 1;
+ 	}
+ 	return 0;
+ }
+@@ -500,7 +539,7 @@
+ /* }}} */
+ 
+ /* called by PDO to get a driver-specific dbh attribute */
+-static int firebird_handle_get_attribute(pdo_dbh_t const *dbh, long attr, zval *val TSRMLS_DC) /* {{{ */
++static int firebird_handle_get_attribute(pdo_dbh_t *dbh, long attr, zval *val TSRMLS_DC) /* {{{ */
+ {
+ 	pdo_firebird_db_handle *H = (pdo_firebird_db_handle *)dbh->driver_data;
+ 
+@@ -615,7 +654,7 @@
+ 		char dpb_buffer[256] = { isc_dpb_version1 }, *dpb;
+ 		
+ 		dpb = dpb_buffer + 1; 
+-		
++
+ 		/* loop through all the provided arguments and set dpb fields accordingly */
+ 		for (i = 0; i < sizeof(dpb_flags); ++i) {
+ 			if (dpb_values[i] && buf_len > 0) {
+@@ -627,15 +666,14 @@
+ 		}
+ 		
+ 		/* fire it up baby! */
+-		if (isc_attach_database(H->isc_status, 0, vars[0].optval, &H->db,(short)(dpb-dpb_buffer),
+-				dpb_buffer)) {
++		if (isc_attach_database(H->isc_status, 0, vars[0].optval, &H->db,(short)(dpb-dpb_buffer), dpb_buffer)) {
+ 			break;
+ 		}
+ 		
+ 		dbh->methods = &firebird_methods;
+ 		dbh->native_case = PDO_CASE_UPPER;
+ 		dbh->alloc_own_columns = 1;
+-
++		
+ 		ret = 1;
+ 		
+ 	} while (0);
+@@ -646,6 +684,14 @@
+ 		}
+ 	}
+ 
++	if (!dbh->methods) {
++		char errmsg[512];
++		ISC_STATUS *s = H->isc_status;
++		isc_interprete(errmsg, &s);
++		zend_throw_exception_ex(php_pdo_get_exception(), 0 TSRMLS_CC, "SQLSTATE[%s] [%d] %s",
++				"HY000", H->isc_status[1], errmsg);
++	}
++
+ 	if (!ret) {
+ 		firebird_handle_closer(dbh TSRMLS_CC);
+ 	}
+@@ -654,6 +700,7 @@
+ }
+ /* }}} */
+ 
++
+ pdo_driver_t pdo_firebird_driver = { /* {{{ */
+ 	PDO_DRIVER_HEADER(firebird),
+ 	pdo_firebird_handle_factory
+diff -Naru php-5.2.9.orig/ext/pdo_firebird/firebird_statement.c php-5.2.9/ext/pdo_firebird/firebird_statement.c
+--- php-5.2.9.orig/ext/pdo_firebird/firebird_statement.c	2009-02-09 13:07:35.000000000 +0100
++++ php-5.2.9/ext/pdo_firebird/firebird_statement.c	2009-06-05 20:59:05.000000000 +0200
+@@ -92,18 +92,14 @@
+ 	pdo_firebird_db_handle *H = S->H;
+ 
+ 	do {
+-		/* named cursors should be closed first */
+-		if (*S->name && isc_dsql_free_statement(H->isc_status, &S->stmt, DSQL_close)) {
++		/* named or open cursors should be closed first */
++		if ((*S->name || S->cursor_open) && isc_dsql_free_statement(H->isc_status, &S->stmt, DSQL_close)) {
+ 			break;
+ 		}
+-		
++		S->cursor_open = 0;
+ 		/* assume all params have been bound */
+ 	
+-		if ((S->statement_type == isc_info_sql_stmt_exec_procedure &&
+-				isc_dsql_execute2(H->isc_status, &H->tr, &S->stmt, PDO_FB_SQLDA_VERSION,
+-					S->in_sqlda, &S->out_sqlda))
+-				|| isc_dsql_execute(H->isc_status, &H->tr, &S->stmt, PDO_FB_SQLDA_VERSION,
+-					S->in_sqlda)) {
++		if (isc_dsql_execute(H->isc_status, &H->tr, &S->stmt, PDO_FB_SQLDA_VERSION, S->in_sqlda)) {
+ 			break;
+ 		}
+ 		
+@@ -113,7 +109,8 @@
+ 		}
+ 	
+ 		*S->name = 0;
+-		S->exhausted = 0;
++		S->cursor_open = (S->out_sqlda.sqln > 0);	/* A cursor is opened, when more than zero columns returned */
++		S->exhausted = !S->cursor_open;
+ 		
+ 		return 1;
+ 	} while (0);
+@@ -135,20 +132,16 @@
+ 		strcpy(stmt->error_code, "HY000");
+ 		H->last_app_error = "Cannot fetch from a closed cursor";
+ 	} else if (!S->exhausted) {
+-
+-		/* an EXECUTE PROCEDURE statement can be fetched from once, without calling the API, because
+-		 * the result was returned in the execute call */
+-		if (S->statement_type == isc_info_sql_stmt_exec_procedure) {
+-			S->exhausted = 1;
+-		} else {
+-			if (isc_dsql_fetch(H->isc_status, &S->stmt, PDO_FB_SQLDA_VERSION, &S->out_sqlda)) {
+-				if (H->isc_status[0] && H->isc_status[1]) {
+-					RECORD_ERROR(stmt);
+-				}
+-				S->exhausted = 1;
+-				return 0;
++		if (isc_dsql_fetch(H->isc_status, &S->stmt, PDO_FB_SQLDA_VERSION, &S->out_sqlda)) {
++			if (H->isc_status[0] && H->isc_status[1]) {
++				RECORD_ERROR(stmt);
+ 			}
++			S->exhausted = 1;
++			return 0;
+ 		}
++ 		if (S->statement_type == isc_info_sql_stmt_exec_procedure) {
++ 			S->exhausted = 1;
++ 		}
+ 		return 1;
+ 	}
+ 	return 0;
+@@ -161,52 +154,32 @@
+ 	pdo_firebird_stmt *S = (pdo_firebird_stmt*)stmt->driver_data;
+ 	struct pdo_column_data *col = &stmt->columns[colno];
+ 	XSQLVAR *var = &S->out_sqlda.sqlvar[colno];
++	int colname_len;
++	char *cp;
+ 	
+ 	/* allocate storage for the column */
+ 	var->sqlind = (void*)emalloc(var->sqllen + 2*sizeof(short));
+ 	var->sqldata = &((char*)var->sqlind)[sizeof(short)];
+ 
++	colname_len = (S->H->fetch_table_names && var->relname_length)
++					? (var->aliasname_length + var->relname_length + 1)
++					: (var->aliasname_length);
+ 	col->precision = -var->sqlscale;
+ 	col->maxlen = var->sqllen;
+-	col->namelen = var->aliasname_length;
+-	col->name = estrndup(var->aliasname,var->aliasname_length);
+-	
+-	return 1;
+-}
+-/* }}} */
++	col->namelen = colname_len;
++	col->name = cp = emalloc(colname_len + 1);
++	if (colname_len > var->aliasname_length) {
++		memmove(cp, var->relname, var->relname_length);
++		cp += var->relname_length;
++		*cp++ = '.';
++	}
++	memmove(cp, var->aliasname, var->aliasname_length);
++	*(cp+var->aliasname_length) = '\0';
++	col->param_type = PDO_PARAM_STR;
+ 
+-#if abies_0
+-/* internal function to override return types of parameters */
+-static void set_param_type(enum pdo_param_type *param_type, XSQLVAR const *var) /* {{{ */
+-{
+-	/* set the param type after the field type */
+-	switch (var->sqltype & ~1) {
+-		case SQL_INT64:
+-#if SIZEOF_LONG < 8
+-			if (0) /* always a string if its size exceeds native long */
+-#endif
+-		case SQL_SHORT:
+-		case SQL_LONG:
+-			if (var->sqlscale == 0) {
+-				*param_type = PDO_PARAM_INT;
+-				break;
+-			}
+-		case SQL_TEXT:
+-		case SQL_VARYING:
+-		case SQL_TYPE_DATE:
+-		case SQL_TYPE_TIME:
+-		case SQL_TIMESTAMP:
+-		case SQL_BLOB:
+-			*param_type = PDO_PARAM_STR;
+-			break;
+-		case SQL_FLOAT:
+-		case SQL_DOUBLE:
+-			*param_type = PDO_PARAM_DBL;
+-			break;
+-	}
++	return 1;
+ }
+ /* }}} */
+-#endif
+ 
+ #define FETCH_BUF(buf,type,len,lenvar) ((buf) = (buf) ? (buf) : \
+ 	emalloc((len) ? (len * sizeof(type)) : ((*(unsigned long*)lenvar) = sizeof(type))))
+@@ -302,15 +275,24 @@
+ 		*ptr = NULL;
+ 		*len = 0;
+ 	} else {
+-		/* override the column param type */
+-		/* set_param_type(&stmt->columns[colno].param_type,var); */
+-		stmt->columns[colno].param_type = PDO_PARAM_STR;
+-		
+ 		if (var->sqlscale < 0) {
+-			static ISC_INT64 const scales[] = { 1, 10, 100, 1000, 10000, 100000, 1000000,
+-				100000000, 1000000000, 1000000000, LL_LIT(10000000000),LL_LIT(100000000000),
+-				LL_LIT(10000000000000), LL_LIT(100000000000000),LL_LIT(1000000000000000),
+-				LL_LIT(1000000000000000),LL_LIT(1000000000000000000) };
++			static ISC_INT64 const scales[] = { 1, 10, 100, 1000, 
++				10000, 
++				100000, 
++				1000000, 
++				10000000,
++				100000000, 
++				1000000000, 
++				LL_LIT(10000000000), 
++				LL_LIT(100000000000),
++				LL_LIT(1000000000000), 
++				LL_LIT(10000000000000), 
++				LL_LIT(100000000000000),
++				LL_LIT(1000000000000000),
++				LL_LIT(10000000000000000), 
++				LL_LIT(100000000000000000), 
++				LL_LIT(1000000000000000000)
++			};
+ 			ISC_INT64 n, f = scales[-var->sqlscale];
+ 
+ 			switch (var->sqltype & ~1) {
+@@ -340,11 +322,6 @@
+ 				struct tm t;
+ 				char *fmt;				
+ 
+-/**
+-* For the time being, this code has been changed to convert every returned value to a string
+-* before passing it back up to the PDO driver.
+-*/
+-				
+ 				case SQL_VARYING:
+ 					*ptr = &var->sqldata[2];
+ 					*len = *(short*)var->sqldata;
+@@ -353,7 +330,6 @@
+ 					*ptr = var->sqldata;
+ 					*len = var->sqllen;
+ 					break;
+-/* --- cut here --- */
+ 				case SQL_SHORT:
+ 				    *ptr = FETCH_BUF(S->fetch_buf[colno], char, CHAR_BUF_LEN, NULL);
+ 					*len = slprintf(*ptr, CHAR_BUF_LEN, "%d", *(short*)var->sqldata);
+@@ -374,51 +350,18 @@
+ 					*ptr = FETCH_BUF(S->fetch_buf[colno], char, CHAR_BUF_LEN, NULL);
+ 					*len = slprintf(*ptr, CHAR_BUF_LEN, "%F" , *(double*)var->sqldata);
+ 					break;
+-/* --- cut here --- */
+-#if abies_0
+-				case SQL_SHORT:
+-					*ptr = FETCH_BUF(S->fetch_buf[colno], long, 0, *len);
+-					*(long*)*ptr = *(short*)var->sqldata;
+-					break;
+-				case SQL_LONG:
+-#if SIZEOF_LONG == 8
+-					*ptr = FETCH_BUF(S->fetch_buf[colno], long, 0, *len);
+-					*(long*)*ptr = *(ISC_LONG*)var->sqldata;
+-#else
+-					*ptr = var->sqldata;
+-#endif
+-					break;
+-				case SQL_INT64:
+-					*len = sizeof(long);
+-#if SIZEOF_LONG == 8
+-					*ptr = var->sqldata;
+-#else
+-					*ptr = FETCH_BUF(S->fetch_buf[colno], char, CHAR_BUF_LEN, NULL);
+-					*len = slprintf(*ptr, CHAR_BUF_LEN, "%" LL_MASK "d", *(ISC_INT64*)var->sqldata);
+-#endif
+-					break;
+-				case SQL_FLOAT:
+-					*ptr = FETCH_BUF(S->fetch_buf[colno], double, 0, *len);
+-					*(double*)*ptr = *(float*)var->sqldata;
+-					break;
+-				case SQL_DOUBLE:
+-					*ptr = var->sqldata;
+-					*len = sizeof(double);
+-					break;
+-#endif
+ 				case SQL_TYPE_DATE:
+ 					isc_decode_sql_date((ISC_DATE*)var->sqldata, &t);
+-					fmt = INI_STR("ibase.dateformat");
++					fmt = S->H->date_format ? S->H->date_format : PDO_FB_DEF_DATE_FMT;
+ 					if (0) {
+ 				case SQL_TYPE_TIME:
+ 						isc_decode_sql_time((ISC_TIME*)var->sqldata, &t);
+-						fmt = INI_STR("ibase.timeformat");
++						fmt = S->H->time_format ? S->H->time_format : PDO_FB_DEF_TIME_FMT;
+ 					} else if (0) {
+ 				case SQL_TIMESTAMP:
+ 						isc_decode_timestamp((ISC_TIMESTAMP*)var->sqldata, &t);
+-						fmt = INI_STR("ibase.timestampformat");
++						fmt = S->H->timestamp_format ? S->H->timestamp_format : PDO_FB_DEF_TIMESTAMP_FMT;
+ 					}
+-
+ 					/* convert the timestamp into a string */
+ 					*ptr = FETCH_BUF(S->fetch_buf[colno], char, *len = 80, NULL);
+ 					*len = strftime(*ptr, *len, fmt, &t);
+@@ -621,13 +564,6 @@
+ 							ZVAL_LONG(param->parameter, *(long*)value);
+ 							break;
+ 						}
+-#if abies_0
+-					case PDO_PARAM_DBL:
+-						if (value) {
+-							ZVAL_DOUBLE(param->parameter, *(double*)value);
+-							break;
+-						}
+-#endif
+ 					default:
+ 						ZVAL_NULL(param->parameter);
+ 				}
+@@ -684,6 +620,22 @@
+ }
+ /* }}} */
+ 
++static int firebird_stmt_cursor_closer(pdo_stmt_t *stmt TSRMLS_DC) /* {{{ */
++{
++	pdo_firebird_stmt *S = (pdo_firebird_stmt*)stmt->driver_data;
++	
++	/* close the statement handle */
++	if ((*S->name || S->cursor_open) && isc_dsql_free_statement(S->H->isc_status, &S->stmt, DSQL_close)) {
++		RECORD_ERROR(stmt);
++		return 0;
++	}
++	*S->name = 0;
++	S->cursor_open = 0;
++	return 1;
++}
++/* }}} */
++
++
+ struct pdo_stmt_methods firebird_stmt_methods = { /* {{{ */
+ 	firebird_stmt_dtor,
+ 	firebird_stmt_execute,
+@@ -692,7 +644,10 @@
+ 	firebird_stmt_get_col,
+ 	firebird_stmt_param_hook,
+ 	firebird_stmt_set_attribute,
+-	firebird_stmt_get_attribute
++	firebird_stmt_get_attribute,
++	NULL, /* get_column_meta_func */
++	NULL, /* next_rowset_func */
++	firebird_stmt_cursor_closer
+ };
+ /* }}} */
+ 
+diff -Naru php-5.2.9.orig/ext/pdo_firebird/pdo_firebird.c php-5.2.9/ext/pdo_firebird/pdo_firebird.c
+--- php-5.2.9.orig/ext/pdo_firebird/pdo_firebird.c	2008-12-31 12:17:41.000000000 +0100
++++ php-5.2.9/ext/pdo_firebird/pdo_firebird.c	2009-06-05 20:59:05.000000000 +0200
+@@ -30,7 +30,7 @@
+ #include "php_pdo_firebird.h"
+ #include "php_pdo_firebird_int.h"
+ 
+-zend_function_entry pdo_firebird_functions[] = { /* {{{ */
++const zend_function_entry pdo_firebird_functions[] = { /* {{{ */
+ 	{NULL, NULL, NULL}
+ };
+ /* }}} */
+@@ -55,6 +55,10 @@
+ 
+ PHP_MINIT_FUNCTION(pdo_firebird) /* {{{ */
+ {
++	REGISTER_PDO_CLASS_CONST_LONG("FB_ATTR_DATE_FORMAT", (long) PDO_FB_ATTR_DATE_FORMAT);
++	REGISTER_PDO_CLASS_CONST_LONG("FB_ATTR_TIME_FORMAT", (long) PDO_FB_ATTR_TIME_FORMAT);
++	REGISTER_PDO_CLASS_CONST_LONG("FB_ATTR_TIMESTAMP_FORMAT", (long) PDO_FB_ATTR_TIMESTAMP_FORMAT);
++
+ 	php_pdo_register_driver(&pdo_firebird_driver);
+ 
+ 	return SUCCESS;
+diff -Naru php-5.2.9.orig/ext/pdo_firebird/php_pdo_firebird.h php-5.2.9/ext/pdo_firebird/php_pdo_firebird.h
+--- php-5.2.9.orig/ext/pdo_firebird/php_pdo_firebird.h	2008-12-31 12:17:42.000000000 +0100
++++ php-5.2.9/ext/pdo_firebird/php_pdo_firebird.h	2009-06-05 20:59:05.000000000 +0200
+@@ -24,18 +24,6 @@
+ extern zend_module_entry pdo_firebird_module_entry;
+ #define phpext_pdo_firebird_ptr &pdo_firebird_module_entry
+ 
+-#ifdef PHP_WIN32
+-# ifdef PDO_FIREBIRD_EXPORTS
+-#  define PDO_FB_API __declspec(dllexport)
+-# elif defined(COMPILE_DL_PDO_FIREBIRD)
+-#  define PDO_FB_API __declspec(dllimport)
+-# else
+-#  define PDO_FB_API
+-# endif
+-#else
+-# define PDO_FB_API
+-#endif
+-
+ #ifdef ZTS
+ #include "TSRM.h"
+ #endif
+diff -Naru php-5.2.9.orig/ext/pdo_firebird/php_pdo_firebird_int.h php-5.2.9/ext/pdo_firebird/php_pdo_firebird_int.h
+--- php-5.2.9.orig/ext/pdo_firebird/php_pdo_firebird_int.h	2008-12-31 12:17:42.000000000 +0100
++++ php-5.2.9/ext/pdo_firebird/php_pdo_firebird_int.h	2009-06-05 20:59:05.000000000 +0200
+@@ -31,6 +31,10 @@
+ 
+ #define PDO_FB_DIALECT 3
+ 
++#define PDO_FB_DEF_DATE_FMT "%Y-%m-%d"
++#define PDO_FB_DEF_TIME_FMT "%H:%M:%S"
++#define PDO_FB_DEF_TIMESTAMP_FMT PDO_FB_DEF_DATE_FMT " " PDO_FB_DEF_TIME_FMT
++
+ #define SHORT_MAX (1 << (8*sizeof(short)-1))
+ 
+ #if SIZEOF_LONG == 8
+@@ -73,6 +77,16 @@
+ 	/* the last error that didn't come from the API */
+ 	char const *last_app_error;
+ 	
++	/* date and time format strings, can be set by the set_attribute method */
++	char *date_format;
++	char *time_format;
++	char *timestamp_format;
++	
++	/* prepend table names on column names in fetch */
++	unsigned fetch_table_names:1;
++	
++	unsigned _reserved:31;
++	
+ } pdo_firebird_db_handle;
+ 
+ 
+@@ -93,7 +107,10 @@
+ 	/* whether EOF was reached for this statement */
+ 	unsigned exhausted:1;
+ 
+-	unsigned _reserved:23;
++	/* successful isc_dsql_execute opens a cursor */
++	unsigned cursor_open:1;
++
++	unsigned _reserved:22;
+ 
+ 	/* the named params that were converted to ?'s by the driver */
+ 	HashTable *named_params;
+@@ -115,6 +132,12 @@
+ 
+ void _firebird_error(pdo_dbh_t *dbh, pdo_stmt_t *stmt, char const *file, long line TSRMLS_DC);
+ 
++enum {
++	PDO_FB_ATTR_DATE_FORMAT = PDO_ATTR_DRIVER_SPECIFIC,
++	PDO_FB_ATTR_TIME_FORMAT,
++	PDO_FB_ATTR_TIMESTAMP_FORMAT,
++};
++
+ #endif	/* PHP_PDO_FIREBIRD_INT_H */
+ 
+ /*
