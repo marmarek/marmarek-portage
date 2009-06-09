@@ -137,6 +137,8 @@ src_unpack() {
 	#marmarek
 	epatch "${FILESDIR}/${P}-pdo_firebird-5.3.diff"
 	epatch "${FILESDIR}/${P}-interbase-5.3.diff"
+	rm "${WORKDIR}/${PV}/${PV}/002_interbase-precision-fix.patch"
+
 
 	# Concurrent PHP Apache2 modules support
 	if use apache2 ; then
