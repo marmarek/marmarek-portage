@@ -1,0 +1,22 @@
+=sys-devel/automake-1.10* >=sys-devel/autoconf-2.61 sys-devel/libtool
+
+0
+http://www.mnogosearch.org/Download/mnogosearch-3.2.42.tar.gz
+
+http://www.mnogosearch.org/
+GPL2
+mnoGoSearch^tm web search engine software
+~x86
+autotools eutils flag-o-matic libtool multilib portability toolchain-funcs
+postgres mysql zlib
+
+
+
+
+
+compile install unpack
+
+
+
+
+

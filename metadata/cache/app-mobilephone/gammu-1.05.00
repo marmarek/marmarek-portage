@@ -1,0 +1,22 @@
+bluetooth? ( net-wireless/bluez-libs ) mysql? ( dev-db/mysql ) irda? ( virtual/os-headers )
+bluetooth? ( net-wireless/bluez-libs ) mysql? ( dev-db/mysql )
+0
+http://www.mwiacek.com/zips/gsm/gammu/stable/1_0x/gammu-1.05.00.tar.gz
+
+http://www.gammu.net/projects/gammu.php
+GPL-2
+a fork of the gnokii project, a tool to handle your cellular phone
+~amd64 ~ia64 ~ppc ~x86
+eutils multilib portability toolchain-funcs
+debug bluetooth irda mysql
+
+
+
+
+
+compile install unpack
+
+
+
+
+

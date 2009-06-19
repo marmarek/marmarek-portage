@@ -1,0 +1,22 @@
+!media-sound/alsa-driver !=virtual/linux-sources-2.4* >=virtual/linux-sources-2.6 kernel_linux? ( virtual/linux-sources ) kernel_linux? ( virtual/linux-sources ) kernel_linux? ( virtual/modutils ) sys-apps/sed
+kernel_linux? ( virtual/modutils )
+0
+mirror://sourceforge/bluetooth-alsa/btsco-0.42.tar.gz
+
+http://bluetooth-alsa.sourceforge.net/
+GPL-2
+BlueTooth headset driver for ALSA (snd-bt-sco)
+-* ~x86
+eutils linux-info linux-mod multilib portability toolchain-funcs versionator
+kernel_linux
+
+
+
+
+
+compile install postinst postrm preinst setup
+
+
+
+
+

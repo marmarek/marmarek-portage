@@ -1,0 +1,22 @@
+pam? ( virtual/pam ) kerberos? ( virtual/krb5 ) selinux? ( >=sys-libs/libselinux-1.28 ) skey? ( >=app-admin/skey-1.1.5-r1 ) ldap? ( net-nds/openldap ) libedit? ( || ( dev-libs/libedit sys-freebsd/freebsd-lib ) ) >=dev-libs/openssl-0.9.6d >=sys-libs/zlib-1.2.3 smartcard? ( dev-libs/opensc ) tcpd? ( >=sys-apps/tcp-wrappers-7.6 ) userland_GNU? ( sys-apps/shadow ) virtual/os-headers sys-devel/autoconf
+pam? ( virtual/pam ) kerberos? ( virtual/krb5 ) selinux? ( >=sys-libs/libselinux-1.28 ) skey? ( >=app-admin/skey-1.1.5-r1 ) ldap? ( net-nds/openldap ) libedit? ( || ( dev-libs/libedit sys-freebsd/freebsd-lib ) ) >=dev-libs/openssl-0.9.6d >=sys-libs/zlib-1.2.3 smartcard? ( dev-libs/opensc ) tcpd? ( >=sys-apps/tcp-wrappers-7.6 ) userland_GNU? ( sys-apps/shadow )
+0
+mirror://openbsd/OpenSSH/portable/openssh-4.3p2.tar.gz hpn? ( http://www.psc.edu/networking/projects/hpn-ssh/openssh-4.3p2-hpn12-gentoo.patch.bz2 ) X509? ( http://roumenpetrov.info/openssh/x509-5.5/openssh-4.3p2+x509-5.5.diff.gz ) smartcard? ( http://www.omniti.com/~jesus/projects/openssh-4.3p2+SecurID_v1.3.2.patch ) ldap? ( http://www.opendarwin.org/projects/openssh-lpk/files/openssh-lpk-4.3p1-0.3.7.patch )
+
+http://www.openssh.com/
+as-is
+Port of OpenBSD's free SSH release
+~alpha ~amd64 ~arm ~hppa ~ia64 ~m68k ~mips ~ppc ~ppc64 ~s390 ~sh ~sparc ~x86 ~x86-fbsd
+ccc eutils flag-o-matic multilib pam portability toolchain-funcs
+ipv6 static pam tcpd kerberos skey selinux chroot X509 ldap smartcard sftplogging hpn libedit
+
+
+virtual/ssh
+
+
+compile install postinst unpack
+
+
+
+
+

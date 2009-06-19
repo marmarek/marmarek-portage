@@ -1,0 +1,22 @@
+sys-apps/keyutils dev-libs/libgcrypt =sys-devel/automake-1.10* >=sys-devel/autoconf-2.61 sys-devel/libtool
+sys-apps/keyutils dev-libs/libgcrypt
+0
+mirror://sourceforge/ecryptfs/ecryptfs-20060921.tar.bz2
+confcache
+http://www.ecryptfs.org
+GPL-2
+eCryptfs userspace utilities
+~x86
+autotools eutils libtool multilib portability toolchain-funcs
+
+
+
+
+
+
+compile install unpack
+
+
+
+
+

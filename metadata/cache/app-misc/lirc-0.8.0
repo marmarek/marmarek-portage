@@ -1,0 +1,22 @@
+virtual/libc virtual/modutils sys-apps/coreutils alsa? ( media-libs/alsa-lib ) usb? ( dev-libs/libusb ) X? ( || ( ( x11-libs/libX11 x11-libs/libSM x11-libs/libICE ) virtual/x11 ) ) sys-kernel/linux-headers sys-devel/autoconf sys-devel/libtool kernel_linux? ( virtual/linux-sources ) kernel_linux? ( virtual/modutils ) sys-apps/sed =sys-devel/automake-1.10* >=sys-devel/autoconf-2.61 sys-devel/libtool
+virtual/libc virtual/modutils sys-apps/coreutils alsa? ( media-libs/alsa-lib ) usb? ( dev-libs/libusb ) X? ( || ( ( x11-libs/libX11 x11-libs/libSM x11-libs/libICE ) virtual/x11 ) ) kernel_linux? ( virtual/modutils )
+0
+mirror://sourceforge/lirc/lirc-0.8.0.tar.bz2
+
+http://www.lirc.org
+GPL-2
+LIRC is a package that allows you to decode and send infra-red signals of many (but not all) commonly used remote controls.
+~x86 ~ppc ~alpha ~ia64 ~amd64 ~ppc64
+autotools eutils flag-o-matic libtool linux-info linux-mod multilib portability toolchain-funcs versionator
+alsa debug doc X usb kernel_linux
+
+
+
+
+
+compile install postinst postrm preinst setup unpack
+
+
+
+
+

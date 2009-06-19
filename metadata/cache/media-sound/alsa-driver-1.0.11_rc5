@@ -1,0 +1,22 @@
+virtual/modutils ~media-sound/alsa-headers-1.0.11_rc5 virtual/linux-sources sparc? ( >=sys-devel/autoconf-2.50 ) sys-apps/debianutils kernel_linux? ( virtual/linux-sources ) kernel_linux? ( virtual/modutils ) sys-apps/sed
+virtual/modutils ~media-sound/alsa-headers-1.0.11_rc5 kernel_linux? ( virtual/modutils )
+0
+mirror://alsaproject/driver/alsa-driver-1.0.11rc5.tar.bz2
+
+http://www.alsa-project.org/
+GPL-2 LGPL-2.1
+Advanced Linux Sound Architecture kernel modules
+~alpha ~amd64 ~ia64 ~mips ~ppc ~ppc64 ~x86
+eutils flag-o-matic linux-info linux-mod multilib portability toolchain-funcs versionator
+oss doc debug bluetooth kernel_linux
+
+
+virtual/alsa
+
+
+compile install postinst postrm preinst setup unpack
+
+
+
+
+
