@@ -1,0 +1,10 @@
+--- tools/xml-rpc-api2cpp/XmlRpcClass.h.orig	2009-08-10 00:28:25.000000000 +0200
++++ tools/xml-rpc-api2cpp/XmlRpcClass.h	2009-08-10 00:28:44.000000000 +0200
+@@ -1,4 +1,6 @@
+-#include <vector.h>
++#include <vector>
++
++using namespace std;
+ 
+ class XmlRpcClass {
+     string mClassName;

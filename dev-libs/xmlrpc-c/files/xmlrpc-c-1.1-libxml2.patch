@@ -1,0 +1,102 @@
+diff -ru xmlrpc-c-1.1.orig/Makefile.config.in xmlrpc-c-1.1/Makefile.config.in
+--- xmlrpc-c-1.1.orig/Makefile.config.in	2009-08-10 00:29:25.000000000 +0200
++++ xmlrpc-c-1.1/Makefile.config.in	2009-08-10 00:39:09.000000000 +0200
+@@ -62,5 +62,5 @@
+ HEADERINST_DIR = @includedir@
+ 
+ LIBXML2_CFLAGS = @LIBXML2_CFLAGS@
+-LIBXML2_LIBS   = @LIBXML2_CFLAGS@
++LIBXML2_LIBS   = @LIBXML2_LIBS@
+ 
+diff -ru xmlrpc-c-1.1.orig/src/xmlrpc_libxml2.c xmlrpc-c-1.1/src/xmlrpc_libxml2.c
+--- xmlrpc-c-1.1.orig/src/xmlrpc_libxml2.c	2005-01-02 05:58:18.000000000 +0100
++++ xmlrpc-c-1.1/src/xmlrpc_libxml2.c	2009-08-10 00:37:41.000000000 +0200
+@@ -34,6 +34,7 @@
+ 
+ #include "xmlrpc.h"
+ #include "xmlrpc_xmlparser.h"
++#include "xmlrpc_int.h"
+ 
+ /* Define the contents of our internal structure. */
+ struct _xml_element {
+@@ -360,7 +361,7 @@
+     NULL,      /* fatalError */
+ };
+ 
+-xml_element *xml_parse (xmlrpc_env *env, char *xml_data, int xml_len)
++xml_element *xml_parse (xmlrpc_env *env, const char *xml_data, int xml_len)
+ {
+     parse_context context;
+     xmlParserCtxt *parser;
+--- xmlrpc-c-1.1.orig/src/Makefile	2009-08-10 00:54:17.000000000 +0200
++++ xmlrpc-c-1.1/src/Makefile	2009-08-10 00:55:07.000000000 +0200
+@@ -32,7 +32,8 @@
+ 
+ ifeq ($(ENABLE_LIBXML2_BACKEND),yes)
+   LIBXML_INCLUDES = $(LIBXML2_CFLAGS)
+-  LIBXML = $(LIBXML2_LIBS)
++  LIBXML = 
++  LIBXML_LDFLAGS = $(LIBXML2_LIBS)
+   LIBXML_FILES = xmlrpc_libxml2.c
+ else
+   LIBXML_INCLUDES = -I$(SRCDIR)/lib/expat/xmlparse
+@@ -90,15 +91,14 @@
+ 
+ all: $(TARGET_LTLIBRARIES) $(TARGET_LIBRARIES) $(TARGET_TESTPROGS)
+ 
+-rpctest:%:%.o libxmlrpc.la libxmlrpc_server.la $(LIBXML)
+-	$(LIBTOOL) --mode=link $(CCLD) -o $@ $(LDFLAGS) $^
++rpctest:%:%.o libxmlrpc.la libxmlrpc_server.la
++	$(LIBTOOL) --mode=link $(CCLD) -o $@ $(LDFLAGS) $(LIBXML_LDFLAGS) $^
+ 
+-efrpctest: rpctest.o libxmlrpc.la libxmlrpc_server.la $(LIBXML)
+-	$(LIBTOOL) --mode=link $(CCLD) -o $@ $(LDFLAGS) $^ -lefence
++efrpctest: rpctest.o libxmlrpc.la libxmlrpc_server.la
++	$(LIBTOOL) --mode=link $(CCLD) -o $@ $(LDFLAGS) $(LIBXML_LDFLAGS) $^ -lefence
+ 
+-cpptest:%:%.o XmlRpcCpp.o libxmlrpc_cpp.a libxmlrpc.la libxmlrpc_server.la \
+-  $(LIBXML)
+-	$(LIBTOOL) --mode=link $(CXXLD) -o $@ $(LDFLAGS) $^
++cpptest:%:%.o XmlRpcCpp.o libxmlrpc_cpp.a libxmlrpc.la libxmlrpc_server.la 
++	$(LIBTOOL) --mode=link $(CXXLD) -o $@ $(LDFLAGS) $(LIBXML_LDFLAGS) $^
+ 
+ LIBLDFLAGS = $(LDFLAGS_VERSINFO) -rpath $(LIBINST_DIR)
+ 
+diff -ru xmlrpc-c-1.1.orig/tools/Makefile.common xmlrpc-c-1.1/tools/Makefile.common
+--- xmlrpc-c-1.1.orig/tools/Makefile.common	2004-12-14 04:28:17.000000000 +0100
++++ xmlrpc-c-1.1/tools/Makefile.common	2009-08-10 01:03:15.000000000 +0200
+@@ -13,7 +13,7 @@
+            $(SRCDIR)/lib/expat/xmltok/libxmlrpc_xmltok.la
+ 
+ ifneq ($(ENABLE_LIBXML2)x,x)
+-  LIBXML = $(LIBXML2_LIBS)
++  LIBXML_LDFLAGS = $(LIBXML2_LIBS)
+ else
+   LIBXML = $(LIBEXPAT)
+ endif
+diff -ru xmlrpc-c-1.1.orig/tools/xml-rpc-api2cpp/Makefile xmlrpc-c-1.1/tools/xml-rpc-api2cpp/Makefile
+--- xmlrpc-c-1.1.orig/tools/xml-rpc-api2cpp/Makefile	2009-08-10 01:00:58.000000000 +0200
++++ xmlrpc-c-1.1/tools/xml-rpc-api2cpp/Makefile	2009-08-10 01:01:39.000000000 +0200
+@@ -29,8 +29,7 @@
+   $(LIBXMLRPC_SERVER) \
+   $(LIBXMLRPC) \
+-  $(LIBXMLRPC_CPP) \
++  $(LIBXMLRPC_CPP)
+-  $(LIBXML)
+-	$(LIBTOOL) --mode=link $(CXXLD) -o $@ $(LDFLAGS) $^
++	$(LIBTOOL) --mode=link $(CXXLD) -o $@ $(LDFLAGS) $(LIBXML_LDFLAGS) $^
+ 
+ %.o:%.cc
+ 	$(LIBTOOL) --mode=compile $(CXX) -c $(CFLAGS) $<
+diff -ru xmlrpc-c-1.1.orig/tools/xmlrpc/Makefile xmlrpc-c-1.1/tools/xmlrpc/Makefile
+--- xmlrpc-c-1.1.orig/tools/xmlrpc/Makefile	2005-01-08 05:26:50.000000000 +0100
++++ xmlrpc-c-1.1/tools/xmlrpc/Makefile	2009-08-10 01:03:38.000000000 +0200
+@@ -19,7 +19,7 @@
+ UTILS = $(UTIL_OBJS:%=$(UTIL_DIR)/%)
+ 
+ xmlrpc:%:%.o $(LIBXMLRPC_CLIENT) $(LIBXMLRPC) $(LIBXML) $(UTILS)
+-	$(LIBTOOL) --mode=link $(CCLD) -o $@ $(LDFLAGS) $^
++	$(LIBTOOL) --mode=link $(CCLD) -o $@ $(LDFLAGS) $(LIBXML_LDFLAGS) $^
+ 
+ %.o:%.c
+ 	$(LIBTOOL) --mode=compile $(CC) -c $(CFLAGS) $<
