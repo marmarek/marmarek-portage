@@ -49,6 +49,7 @@ src_unpack() {
 	epatch ${FILESDIR}/${PN}-1.1.1-krb5-gssapi.patch
 	epatch ${FILESDIR}/${PN}-1.1.3-gssd-heimdal.patch
 	epatch ${FILESDIR}/${PN}-1.1.6-no-libgssglue.patch
+	epatch ${FILESDIR}/${PN}-1.2.0-free_error_message.patch
 	AT_M4DIR=aclocal eautoreconf
 }
 
