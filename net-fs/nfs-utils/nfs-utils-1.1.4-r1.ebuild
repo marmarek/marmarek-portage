@@ -1,6 +1,8 @@
+# hopefully patched nfs-utils // winemore
+
 # Copyright 1999-2009 Gentoo Foundation
 # Distributed under the terms of the GNU General Public License v2
-# $Header: /var/cvsroot/gentoo-x86/net-fs/nfs-utils/nfs-utils-1.1.4-r1.ebuild,v 1.1 2009/01/31 22:20:24 vapier Exp $
+# $Header: $
 
 inherit eutils flag-o-matic multilib autotools
 
@@ -10,7 +12,7 @@ SRC_URI="mirror://sourceforge/nfs/${P}.tar.bz2"
 
 LICENSE="GPL-2"
 SLOT="0"
-KEYWORDS="~alpha ~amd64 ~arm ~hppa ~ia64 ~mips ~ppc ~ppc64 ~s390 ~sh ~sparc ~x86"
+KEYWORDS="~alpha amd64 ~arm ~hppa ~ia64 ~mips ~ppc ~ppc64 ~s390 ~sh ~sparc x86"
 IUSE="nonfsv4 tcpd kerberos"
 
 # kth-krb doesn't provide the right include
@@ -19,13 +21,17 @@ IUSE="nonfsv4 tcpd kerberos"
 # (04 Feb 2005 agriffis)
 RDEPEND="tcpd? ( sys-apps/tcp-wrappers )
 	sys-libs/e2fsprogs-libs
-	>=net-nds/portmap-5b-r6
+	|| ( net-nds/rpcbind >=net-nds/portmap-5b-r6 )
 	!nonfsv4? (
 		>=dev-libs/libevent-1.0b
-		>=net-libs/libnfsidmap-0.21-r1
+		>=net-libs/libnfsidmap-0.16
 		kerberos? (
 			net-libs/librpcsecgss
-			virtual/krb5
+			|| (
+				net-libs/libgssglue
+				virtual/krb5
+			)
+			>=app-crypt/heimdal-1.2
 		)
 	)"
 # util-linux dep is to prevent man-page collision
@@ -40,14 +46,16 @@ src_unpack() {
 	epatch "${FILESDIR}"/${PN}-1.1.4-mtab-sym.patch
 	epatch "${FILESDIR}"/${PN}-1.1.4-no-exec.patch
 
-	sed -i -e 's/$(RPCSECGSS_CFLAGS) $(KRBCFLAGS)/$(KRBCFLAGS) $(RPCSECGSS_CFLAGS)/' utils/gssd/Makefile.am
+	epatch "${FILESDIR}"/${PN}-1.1.2-kerberos-ac.patch
+	epatch "${FILESDIR}"/${PN}-1.1.2-pkgconfig_ac.patch
+	epatch "${FILESDIR}"/${PN}-1.1.2-no_libgssapi.patch
+	epatch "${FILESDIR}"/${PN}-1.1.4-heimdal_functions.patch
 
-	epatch ${FILESDIR}/${PN}-1.1.1-heimdal.patch
-	epatch ${FILESDIR}/${PN}-1.1.1-krb5-gssapi.patch
-	epatch ${FILESDIR}/${PN}-1.1.1-no-libgssglue.patch
-	epatch ${FILESDIR}/${PN}-1.1.3-gssd-heimdal.patch
-	AT_M4DIR=aclocal eautoreconf
+	eautoreconf
 }
+
+
+
 
 src_compile() {
 	local myconf
@@ -119,3 +127,4 @@ pkg_postinst() {
 		cp -pPR "${f}" "${ROOT}"/var/lib/nfs/
 	done
 }
+
