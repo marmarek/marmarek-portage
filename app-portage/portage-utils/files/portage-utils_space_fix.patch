@@ -1,0 +1,12 @@
+diff -ur portage-utils-0.2.1.orig/main.c portage-utils-0.2.1/main.c
+--- portage-utils-0.2.1.orig/main.c	2009-08-29 21:45:54.000000000 +0200
++++ portage-utils-0.2.1/main.c	2009-12-03 23:34:29.000000000 +0100
+@@ -57,7 +57,7 @@
+ char reinitialize = 0;
+ char reinitialize_metacache = 0;
+ char portdir[_Q_PATH_MAX] = EPREFIX "/usr/portage";
+-char portarch[20] = ""; 
++char portarch[20] = "";
+ char portvdb[_Q_PATH_MAX] = "var/db/pkg";
+ char portcachedir[] = "metadata/cache";
+ char portroot[_Q_PATH_MAX] = "/";
