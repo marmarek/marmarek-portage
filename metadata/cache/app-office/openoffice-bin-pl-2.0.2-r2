@@ -1,4 +1,4 @@
-!app-office/openoffice || ( x11-libs/libXaw virtual/x11 ) sys-libs/glibc >=dev-lang/perl-5.0 app-arch/zip app-arch/unzip java? ( !amd64? ( >=virtual/jre-1.4.1 ) amd64? ( app-emulation/emul-linux-x86-java ) ) amd64? ( >=app-emulation/emul-linux-x86-xlibs-1.0 ) !app-office/openoffice sys-apps/findutils >=app-arch/rpm2targz-9.0-r1
+!app-office/openoffice || ( x11-libs/libXaw virtual/x11 ) sys-libs/glibc >=dev-lang/perl-5.0 app-arch/zip app-arch/unzip java? ( !amd64? ( >=virtual/jre-1.4.1 ) amd64? ( app-emulation/emul-linux-x86-java ) ) amd64? ( >=app-emulation/emul-linux-x86-xlibs-1.0 ) !app-office/openoffice sys-apps/findutils >=app-arch/rpm2targz-9.0.0.3g
 !app-office/openoffice || ( x11-libs/libXaw virtual/x11 ) sys-libs/glibc >=dev-lang/perl-5.0 app-arch/zip app-arch/unzip java? ( !amd64? ( >=virtual/jre-1.4.1 ) amd64? ( app-emulation/emul-linux-x86-java ) ) amd64? ( >=app-emulation/emul-linux-x86-xlibs-1.0 ) !app-office/openoffice
 0
 ftp://sunsite.icm.edu.pl/packages/OpenOffice/ux/OOo-2.0.2-1-rpm-linux-ux.pl.tar.bz2
