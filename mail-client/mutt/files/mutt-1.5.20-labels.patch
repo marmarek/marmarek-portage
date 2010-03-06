@@ -1,0 +1,220 @@
+diff -Naru mutt-1.5.20.orig/OPS mutt-1.5.20/OPS
+--- mutt-1.5.20.orig/OPS	2009-05-13 07:01:13.000000000 +0200
++++ mutt-1.5.20/OPS	2010-03-05 15:35:06.000000000 +0100
+@@ -56,6 +56,7 @@
+ OP_DISPLAY_ADDRESS "display full address of sender"
+ OP_DISPLAY_HEADERS "display message and toggle header weeding"
+ OP_DISPLAY_MESSAGE "display a message"
++OP_EDIT_LABEL "add, change, or delete a message's label"
+ OP_EDIT_MESSAGE "edit the raw message"
+ OP_EDITOR_BACKSPACE "delete the char in front of the cursor"
+ OP_EDITOR_BACKWARD_CHAR "move the cursor one character to the left"
+diff -Naru mutt-1.5.20.orig/PATCHES mutt-1.5.20/PATCHES
+--- mutt-1.5.20.orig/PATCHES	2008-11-11 20:55:46.000000000 +0100
++++ mutt-1.5.20/PATCHES	2010-03-05 15:35:06.000000000 +0100
+@@ -0,0 +1 @@
++dgc.xlabel_ext.5
+diff -Naru mutt-1.5.20.orig/copy.c mutt-1.5.20/copy.c
+--- mutt-1.5.20.orig/copy.c	2009-06-13 01:38:52.000000000 +0200
++++ mutt-1.5.20/copy.c	2010-03-05 15:35:06.000000000 +0100
+@@ -111,6 +111,10 @@
+ 	ignore = 0;
+       }
+ 
++      if (flags & CH_UPDATE_LABEL &&
++	  mutt_strncasecmp ("X-Label:", buf, 8) == 0)
++	continue;
++
+       if (!ignore && fputs (buf, out) == EOF)
+ 	return (-1);
+     }
+@@ -301,6 +305,7 @@
+ 	  break;
+ 	}
+       }
++
+     }
+   }
+ 
+@@ -412,6 +417,14 @@
+       fprintf (out, "Lines: %d\n", h->lines);
+   }
+ 
++  if (flags & CH_UPDATE_LABEL && h->xlabel_changed)
++  {
++    if (h->env->x_label != NULL)
++      if (fprintf(out, "X-Label: %s\n", h->env->x_label) !=
++		  10 + strlen(h->env->x_label))
++        return -1;
++  }
++
+   if ((flags & CH_NONEWLINE) == 0)
+   {
+     if (flags & CH_PREFIX)
+@@ -492,6 +505,9 @@
+       _mutt_make_string (prefix, sizeof (prefix), NONULL (Prefix), Context, hdr, 0);
+   }
+ 
++  if (hdr->xlabel_changed)
++    chflags |= CH_UPDATE_LABEL;
++
+   if ((flags & M_CM_NOHEADER) == 0)
+   {
+     if (flags & M_CM_PREFIX)
+diff -Naru mutt-1.5.20.orig/copy.h mutt-1.5.20/copy.h
+--- mutt-1.5.20.orig/copy.h	2009-06-13 01:38:52.000000000 +0200
++++ mutt-1.5.20/copy.h	2010-03-05 15:39:02.000000000 +0100
+@@ -53,7 +53,8 @@
+ #define CH_UPDATE_IRT     (1<<16) /* update In-Reply-To: */
+ #define CH_UPDATE_REFS    (1<<17) /* update References: */
+ #define CH_DISPLAY        (1<<18) /* display result to user */
+-
++/* this absurd location to avoid conflict with cd.edit_threads -- *sigh* */
++#define CH_UPDATE_LABEL    (1<<20) /* update X-Label: from hdr->env->x_label? */
+ 
+ int mutt_copy_hdr (FILE *, FILE *, LOFF_T, LOFF_T, int, const char *);
+ 
+diff -Naru mutt-1.5.20.orig/curs_main.c mutt-1.5.20/curs_main.c
+--- mutt-1.5.20.orig/curs_main.c	2009-06-14 04:48:36.000000000 +0200
++++ mutt-1.5.20/curs_main.c	2010-03-05 15:35:06.000000000 +0100
+@@ -1926,6 +1926,21 @@
+ 	menu->redraw = REDRAW_FULL;
+ 	break;
+ 
++      case OP_EDIT_LABEL:
++
++	CHECK_MSGCOUNT;
++	CHECK_READONLY;
++	rc = mutt_label_message(tag ? NULL : CURHDR);
++	if (rc > 0) {
++	  Context->changed = 1;
++	  menu->redraw = REDRAW_FULL;
++	  mutt_message ("%d label%s changed.", rc, rc == 1 ? "" : "s");
++	}
++	else {
++	  mutt_message _("No labels changed.");
++	}
++	break;
++
+       case OP_LIST_REPLY:
+ 
+ 	CHECK_ATTACH;
+diff -Naru mutt-1.5.20.orig/doc/manual.txt mutt-1.5.20/doc/manual.txt
+--- mutt-1.5.20.orig/doc/manual.txt	2009-06-14 20:54:56.000000000 +0200
++++ mutt-1.5.20/doc/manual.txt	2010-03-05 15:36:48.000000000 +0100
+@@ -4072,7 +4072,10 @@
+ ?X-Label:? fields in the index, and Mutt's pattern-matcher can match regular
+ expressions to ?X-Label:? fields with the ??y? selector. ?X-Label:? is not a
+ standard message header field, but it can easily be inserted by procmail and
+-other mail filtering agents.
++other mail filtering agents.  You can change or delete the
++``X-Label:'' field within Mutt using the ``edit-label'' command,
++bound to the ``y'' key by default.  This works for tagged messages,
++too.
+ 
+ Lastly, Mutt has the ability to sort the mailbox into threads. A thread is a
+ group of messages which all relate to the same subject. This is usually
+diff -Naru mutt-1.5.20.orig/functions.h mutt-1.5.20/functions.h
+--- mutt-1.5.20.orig/functions.h	2009-04-30 07:36:17.000000000 +0200
++++ mutt-1.5.20/functions.h	2010-03-05 15:35:16.000000000 +0100
+@@ -99,6 +99,7 @@
+   { "delete-thread",		OP_DELETE_THREAD,		"\004" },
+   { "delete-subthread",		OP_DELETE_SUBTHREAD,		"\033d" },
+   { "edit",			OP_EDIT_MESSAGE,		"e" },
++  { "edit-label",		OP_EDIT_LABEL,			"y" },
+   { "edit-type",		OP_EDIT_TYPE,			"\005" },
+   { "forward-message",		OP_FORWARD_MESSAGE,		"f" },
+   { "flag-message",		OP_FLAG_MESSAGE,		"F" },
+@@ -186,6 +187,7 @@
+   { "set-flag",  	OP_MAIN_SET_FLAG,		"w" },
+   { "clear-flag",       OP_MAIN_CLEAR_FLAG,		"W" },
+   { "edit",		OP_EDIT_MESSAGE,		"e" },
++  { "edit-label",	OP_EDIT_LABEL,			"y" },
+   { "edit-type",	OP_EDIT_TYPE,			"\005" },
+   { "forward-message",	OP_FORWARD_MESSAGE,		"f" },
+   { "flag-message",	OP_FLAG_MESSAGE,		"F" },
+diff -Naru mutt-1.5.20.orig/headers.c mutt-1.5.20/headers.c
+--- mutt-1.5.20.orig/headers.c	2010-03-05 15:34:34.000000000 +0100
++++ mutt-1.5.20/headers.c	2010-03-05 15:35:16.000000000 +0100
+@@ -215,3 +215,59 @@
+     }
+   }
+ }
++
++/*
++ * dgc: Add an X-Label: field.
++ */
++static int label_message(HEADER *hdr, char *new)
++{
++	if (hdr == NULL)
++		return 0;
++	if (hdr->env->x_label == NULL && new == NULL)
++		return 0;
++	if (hdr->env->x_label != NULL && new != NULL &&
++			strcmp(hdr->env->x_label, new) == 0)
++		return 0;
++	if (hdr->env->x_label != NULL)
++		FREE(&hdr->env->x_label);
++	if (new == NULL)
++		hdr->env->x_label = NULL;
++	else
++		hdr->env->x_label = safe_strdup(new);
++	return hdr->changed = hdr->xlabel_changed = 1;
++}
++
++int mutt_label_message(HEADER *hdr)
++{
++	char buf[LONG_STRING], *new;
++	int i;
++	int changed;
++
++	*buf = '\0';
++	if (hdr != NULL && hdr->env->x_label != NULL) {
++		strncpy(buf, hdr->env->x_label, LONG_STRING);
++	}
++
++	mutt_get_field("Label: ", buf, sizeof(buf), M_CLEAR);
++	new = buf;
++	SKIPWS(new);
++	if (*new == '\0')
++		new = NULL;
++
++	changed = 0;
++	if (hdr != NULL) {
++		changed += label_message(hdr, new);
++	} else {
++#define HDR_OF(index)	Context->hdrs[Context->v2r[(index)]]
++		for (i = 0; i < Context->vcount; ++i) {
++			if (HDR_OF(i)->tagged)
++				if (label_message(HDR_OF(i), new)) {
++					++changed;
++					mutt_set_flag(Context, HDR_OF(i),
++						M_TAG, 0);
++				}
++		}
++	}
++
++	return changed;
++}
+diff -Naru mutt-1.5.20.orig/mutt.h mutt-1.5.20/mutt.h
+--- mutt-1.5.20.orig/mutt.h	2010-03-05 15:34:36.000000000 +0100
++++ mutt-1.5.20/mutt.h	2010-03-05 15:35:17.000000000 +0100
+@@ -719,6 +719,7 @@
+ 					 * This flag is used by the maildir_trash
+ 					 * option.
+ 					 */
++  unsigned int xlabel_changed : 1;	/* editable - used for syncing */
+   
+   /* timezone of the sender of this message */
+   unsigned int zhours : 5;
+diff -Naru mutt-1.5.20.orig/protos.h mutt-1.5.20/protos.h
+--- mutt-1.5.20.orig/protos.h	2010-03-05 15:34:36.000000000 +0100
++++ mutt-1.5.20/protos.h	2010-03-05 15:37:29.000000000 +0100
+@@ -183,6 +183,7 @@
+ void mutt_edit_file (const char *, const char *);
+ void mutt_edit_headers (const char *, const char *, HEADER *, char *, size_t);
+ int mutt_filter_unprintable (char **);
++int mutt_label_message (HEADER *);
+ void mutt_curses_error (const char *, ...);
+ void mutt_curses_message (const char *, ...);
+ void mutt_enter_command (void);
