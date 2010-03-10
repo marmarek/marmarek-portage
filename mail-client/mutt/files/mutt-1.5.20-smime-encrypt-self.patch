@@ -1,7 +1,7 @@
 Based on patch from Omen Wild
 http://www.mail-archive.com/mutt-users%40mutt.org/msg31169.html
 
-diff -aru mutt-1.5.20.orig/crypt.c mutt-1.5.20/crypt.c
+diff -ru mutt-1.5.20.orig/crypt.c mutt-1.5.20/crypt.c
 --- mutt-1.5.20.orig/crypt.c	2009-03-31 08:52:43.000000000 +0200
 +++ mutt-1.5.20/crypt.c	2010-03-10 22:30:03.000000000 +0100
 @@ -737,6 +737,17 @@
@@ -22,7 +22,7 @@ diff -aru mutt-1.5.20.orig/crypt.c mutt-1.5.20/crypt.c
       }
    }
      
-diff -aru mutt-1.5.20.orig/init.h mutt-1.5.20/init.h
+diff -ru mutt-1.5.20.orig/init.h mutt-1.5.20/init.h
 --- mutt-1.5.20.orig/init.h	2009-06-13 23:35:21.000000000 +0200
 +++ mutt-1.5.20/init.h	2010-03-10 19:30:43.000000000 +0100
 @@ -2721,6 +2721,11 @@
@@ -37,14 +37,14 @@ diff -aru mutt-1.5.20.orig/init.h mutt-1.5.20/init.h
    { "smime_timeout",		DT_NUM,	 R_NONE, UL &SmimeTimeout, 300 },
    /*
    ** .pp
-diff -aru mutt-1.5.20.orig/mutt.h mutt-1.5.20/mutt.h
+diff -ru mutt-1.5.20.orig/mutt.h mutt-1.5.20/mutt.h
 --- mutt-1.5.20.orig/mutt.h	2009-06-13 00:15:42.000000000 +0200
-+++ mutt-1.5.20/mutt.h	2010-03-10 19:31:09.000000000 +0100
-@@ -285,6 +285,7 @@
- #endif
-   OPT_SUBJECT,
-   OPT_VERIFYSIG,      /* verify PGP signatures */
++++ mutt-1.5.20/mutt.h	2010-03-10 22:55:22.000000000 +0100
+@@ -280,6 +280,7 @@
+   OPT_QUIT,
+   OPT_REPLYTO,
+   OPT_RECALL,
 +  OPT_SMIMEENCRYPTSELF,
-     
-   /* THIS MUST BE THE LAST VALUE. */
-   OPT_MAX
+ #if defined(USE_SSL)
+   OPT_SSLSTARTTLS,
+ #endif
