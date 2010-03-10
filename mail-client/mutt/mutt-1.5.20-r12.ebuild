@@ -111,6 +111,7 @@ src_unpack() {
 	epatch "${FILESDIR}"/mutt-1.5.20-subject-mistruncation-31881f38ca1e.patch
 	epatch "${FILESDIR}"/mutt-1.5.20-copy-From-to-imap-b2b97c7a2ae6.patch
 	epatch "${FILESDIR}"/mutt-1.5.20-yes-no-non-ascii-a6fddecdc5f5.patch
+	epatch "${FILESDIR}"/mutt-1.5.20-smime-encrypt-self.patch
 
 	# patch version string for bug reports
 	sed -i -e 's/"Mutt %s (%s)"/"Mutt %s (%s, Gentoo '"${PVR}"')"/' \

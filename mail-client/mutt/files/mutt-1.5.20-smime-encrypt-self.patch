@@ -1,0 +1,47 @@
+diff -aru mutt-1.5.20.orig/crypt.c mutt-1.5.20/crypt.c
+--- mutt-1.5.20.orig/crypt.c	2009-03-31 08:52:43.000000000 +0200
++++ mutt-1.5.20/crypt.c	2010-03-10 22:30:03.000000000 +0100
+@@ -737,6 +737,17 @@
+        if ((*keylist = crypt_smime_findkeys (msg->env->to, msg->env->cc,
+       				             msg->env->bcc)) == NULL)
+            return (-1);
++
++	   if (SmimeDefaultKey && query_quadoption(OPT_SMIMEENCRYPTSELF,
++				   _("Encrypt message to S/MIME fault Key also?")) == M_YES)
++	   {
++		   int old_keylist_size = mutt_strlen(*keylist);
++		   int keylist_size = old_keylist_size + mutt_strlen (SmimeDefaultKey) + 3; /* +1 for 
++																				   LL, +1 for blank, +1 for \n */
++		   fprintf(stderr, "keylist_size: %d\n", keylist_size);
++		   safe_realloc(keylist, keylist_size);
++		   sprintf(*keylist + old_keylist_size, "%s\n", SmimeDefaultKey);
++	   }
+      }
+   }
+     
+diff -aru mutt-1.5.20.orig/init.h mutt-1.5.20/init.h
+--- mutt-1.5.20.orig/init.h	2009-06-13 23:35:21.000000000 +0200
++++ mutt-1.5.20/init.h	2010-03-10 19:30:43.000000000 +0100
+@@ -2721,6 +2721,11 @@
+   ** possible \fCprintf(3)\fP-like sequences.
+   ** (S/MIME only)
+   */
++  { "smime_encrypt_self", DT_QUAD, R_NONE, OPT_SMIMEENCRYPTSELF, M_YES },
++  /*
++  ** .pp
++  ** Encrypt the message to smime_default_key too.
++  */
+   { "smime_timeout",		DT_NUM,	 R_NONE, UL &SmimeTimeout, 300 },
+   /*
+   ** .pp
+diff -aru mutt-1.5.20.orig/mutt.h mutt-1.5.20/mutt.h
+--- mutt-1.5.20.orig/mutt.h	2009-06-13 00:15:42.000000000 +0200
++++ mutt-1.5.20/mutt.h	2010-03-10 19:31:09.000000000 +0100
+@@ -285,6 +285,7 @@
+ #endif
+   OPT_SUBJECT,
+   OPT_VERIFYSIG,      /* verify PGP signatures */
++  OPT_SMIMEENCRYPTSELF,
+     
+   /* THIS MUST BE THE LAST VALUE. */
+   OPT_MAX
