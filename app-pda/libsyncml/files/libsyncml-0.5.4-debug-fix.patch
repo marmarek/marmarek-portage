@@ -1,0 +1,39 @@
+diff -Naru libsyncml-0.5.4.orig/libsyncml/sml_transport.c libsyncml-0.5.4/libsyncml/sml_transport.c
+--- libsyncml-0.5.4.orig/libsyncml/sml_transport.c	2009-06-04 11:16:56.000000000 +0200
++++ libsyncml-0.5.4/libsyncml/sml_transport.c	2009-10-28 02:48:28.000000000 +0100
+@@ -272,7 +272,7 @@
+ 			if (tsp->connected)
+ 				g_error("A connect event was received " \
+ 					"but the transport layer is already connected.");
+-			smlTrace(TRACE_INTERNAL, "%s: connect + no link");
++			smlTrace(TRACE_INTERNAL, "%s: connect + no link", __func__);
+ 			tsp->connected = TRUE;
+ 		}
+ 
+@@ -284,7 +284,7 @@
+ 			if (!tsp->connected)
+ 				g_error("A disconnect event was received " \
+ 					"but there is no connected transport.");
+-			smlTrace(TRACE_INTERNAL, "%s: disconnect + no link");
++			smlTrace(TRACE_INTERNAL, "%s: disconnect + no link", __func__);
+ 			tsp->connected = FALSE;
+ 		}
+ 
+@@ -297,7 +297,7 @@
+ 				g_error("A connect event with a link was received " \
+ 					"but the link does not contain the required " \
+ 					"transport environment.");
+-			smlTrace(TRACE_INTERNAL, "%s: connect + link");
++			smlTrace(TRACE_INTERNAL, "%s: connect + link", __func__);
+ 			g_mutex_lock(tsp->connections_mutex);
+ 			tsp->connections++;
+ 			g_mutex_unlock(tsp->connections_mutex);
+@@ -312,7 +312,7 @@
+ 				g_error("A disconnect event with a link was received " \
+ 					"but the link still contains the " \
+ 					"transport environment.");
+-			smlTrace(TRACE_INTERNAL, "%s: disconnect + link");
++			smlTrace(TRACE_INTERNAL, "%s: disconnect + link", __func__);
+ 			g_mutex_lock(tsp->connections_mutex);
+ 			tsp->connections--;
+ 			g_mutex_unlock(tsp->connections_mutex);
