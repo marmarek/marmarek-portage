@@ -17,8 +17,7 @@ SLOT="0"
 KEYWORDS="alpha amd64 hppa ia64 ppc sparc x86"
 IUSE="mysql nls"
 
-RDEPEND="dev-libs/libxml
-	dev-libs/libxml2
+RDEPEND="dev-libs/libxml2
 	media-libs/jpeg
 	media-libs/libpng
 	>=media-libs/gd-2
