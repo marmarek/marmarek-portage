@@ -15,7 +15,7 @@ SLOT="0"
 
 KEYWORDS="~x86 ~amd64"
 
-IUSE="gpm jabber ssl spell jpeg gsm python unicode sqlite sqlite3 gif nogg
+IUSE="gpm jabber ssl spell jpeg gpg gsm python unicode sqlite sqlite3 gif nogg
 gtk perl xosd debug expat static"
 
 DEPEND="jabber? ( >=dev-libs/expat-1.95.6 )
@@ -26,6 +26,7 @@ DEPEND="jabber? ( >=dev-libs/expat-1.95.6 )
 	jpeg? ( >=media-libs/jpeg-6b-r2 )
 	spell? ( >=app-text/aspell-0.50.5 )
 	!nogg? ( >=net-libs/libgadu-1.7.0 )
+	gpg? ( app-crypt/gnupg )
 	gsm? ( >=media-sound/gsm-1.0.10 )
 	python? ( >=dev-lang/python-2.3.3 )
 	perl? ( >=dev-lang/perl-5.2 )
@@ -73,6 +74,7 @@ src_compile() {
 		`use_with gif libgif` \
 		`use_with xosd libxosd` \
 		`use_with python` \
+		`use_with gpg` \
 		`use_with perl` \
 		`use_with sqlite` \
 		`use_with sqlite3` \
