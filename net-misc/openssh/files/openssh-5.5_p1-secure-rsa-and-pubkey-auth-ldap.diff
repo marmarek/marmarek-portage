@@ -1,43 +1,36 @@
-Centralized public key file
-(c) Szpajder
-diff -Nur openssh-4.2p1.old/auth-rsa.c openssh-4.2p1/auth-rsa.c
---- openssh-4.2p1.old/auth-rsa.c	2005-06-17 04:59:35.000000000 +0200
-+++ openssh-4.2p1/auth-rsa.c	2005-09-29 15:27:19.000000000 +0200
-@@ -161,25 +161,18 @@
- 	struct stat st;
- 	Key *key;
+diff -Naru openssh-5.5p1.orig/auth-rsa.c openssh-5.5p1/auth-rsa.c
+--- openssh-5.5p1.orig/auth-rsa.c	2010-05-30 02:37:24.512746473 +0200
++++ openssh-5.5p1/auth-rsa.c	2010-05-30 02:38:22.787789569 +0200
+@@ -182,9 +182,6 @@
+ 	unsigned int i = 0;
+ #endif
  
 -	/* Temporarily use the user's uid. */
 -	temporarily_use_uid(pw);
 -
- 	/* The authorized keys. */
- 	file = authorized_keys_file(pw);
- 	debug("trying public RSA key file %s", file);
+ #ifdef WITH_LDAP_PUBKEY
+ 	/* here is the job */
+ 	key = key_new(KEY_RSA1);
+@@ -246,10 +243,6 @@
+ 			/* break out, this key is allowed */
+ 			allowed = 1;
  
- 	/* Fail quietly if file does not exist */
- 	if (stat(file, &st) < 0) {
--		/* Restore the privileged uid. */
--		restore_uid();
- 		xfree(file);
- 		return (0);
- 	}
- 	/* Open the file containing the authorized keys. */
- 	f = fopen(file, "r");
+-			/* add the return stuff etc... */
+-			/* Restore the privileged uid. */
+-			restore_uid();
+-
+ 			/* return key if allowed */
+ 			if (allowed && rkey != NULL)
+ 			    *rkey = key;
+@@ -273,7 +266,6 @@
+ 	f = auth_openkeyfile(file, pw, options.strict_modes);
  	if (!f) {
--		/* Restore the privileged uid. */
--		restore_uid();
  		xfree(file);
- 		return (0);
- 	}
-@@ -188,7 +181,6 @@
- 		xfree(file);
- 		fclose(f);
- 		logit("Authentication refused: %s", line);
 -		restore_uid();
  		return (0);
  	}
  
-@@ -205,6 +197,7 @@
+@@ -290,6 +282,7 @@
  	while (read_keyfile_line(f, file, line, sizeof(line), &linenum) != -1) {
  		char *cp;
  		char *key_options;
@@ -45,7 +38,7 @@ diff -Nur openssh-4.2p1.old/auth-rsa.c openssh-4.2p1/auth-rsa.c
  		int keybits;
  
  		/* Skip leading whitespace, empty and comment lines. */
-@@ -243,6 +236,14 @@
+@@ -328,6 +321,14 @@
  		if (BN_cmp(key->rsa->n, client_n) != 0)
  			continue;
  
@@ -60,7 +53,7 @@ diff -Nur openssh-4.2p1.old/auth-rsa.c openssh-4.2p1/auth-rsa.c
  		/* check the real bits  */
  		keybits = BN_num_bits(key->rsa->n);
  		if (keybits < 0 || bits != (u_int)keybits)
-@@ -258,14 +259,24 @@
+@@ -343,14 +344,24 @@
  		if (!auth_parse_options(pw, key_options, file, linenum))
  			continue;
  
@@ -88,10 +81,10 @@ diff -Nur openssh-4.2p1.old/auth-rsa.c openssh-4.2p1/auth-rsa.c
  	/* Close the file. */
  	xfree(file);
  	fclose(f);
-diff -Nur openssh-4.2p1.old/auth2-pubkey.c openssh-4.2p1/auth2-pubkey.c
---- openssh-4.2p1.old/auth2-pubkey.c	2004-12-11 03:39:50.000000000 +0100
-+++ openssh-4.2p1/auth2-pubkey.c	2005-09-29 15:26:05.000000000 +0200
-@@ -165,7 +165,7 @@
+diff -Naru openssh-5.5p1.orig/auth2-pubkey.c openssh-5.5p1/auth2-pubkey.c
+--- openssh-5.5p1.orig/auth2-pubkey.c	2010-05-30 02:37:24.504788726 +0200
++++ openssh-5.5p1/auth2-pubkey.c	2010-05-30 02:42:24.448240495 +0200
+@@ -180,7 +180,7 @@
  	return authenticated;
  }
  
@@ -100,41 +93,44 @@ diff -Nur openssh-4.2p1.old/auth2-pubkey.c openssh-4.2p1/auth2-pubkey.c
  static int
  user_key_allowed2(struct passwd *pw, Key *key, char *file)
  {
-@@ -177,22 +177,16 @@
- 	Key *found;
- 	char *fp;
+@@ -196,9 +196,6 @@
+ 	unsigned int i = 0;
+ #endif
  
 -	/* Temporarily use the user's uid. */
 -	temporarily_use_uid(pw);
 -
- 	debug("trying public key file %s", file);
+ #ifdef WITH_LDAP_PUBKEY
+ 	found_key = 0;
+ 	/* allocate a new key type */
+@@ -250,7 +247,6 @@
+ 			    /* restoring memory */
+ 			    ldap_keys_free(k);
+ 			    xfree(fp);
+-			    restore_uid();
+ 			    key_free(found);
+ 			    return found_key;
+ 			    break;
+@@ -268,7 +264,6 @@
+ 	f = auth_openkeyfile(file, pw, options.strict_modes);
  
- 	/* Fail quietly if file does not exist */
- 	if (stat(file, &st) < 0) {
--		/* Restore the privileged uid. */
--		restore_uid();
- 		return 0;
- 	}
- 	/* Open the file containing the authorized keys. */
- 	f = fopen(file, "r");
  	if (!f) {
- 		/* Restore the privileged uid. */
 -		restore_uid();
  		return 0;
  	}
- 	if (options.strict_modes &&
-@@ -208,6 +202,7 @@
+ 
+@@ -277,6 +272,7 @@
  
  	while (read_keyfile_line(f, file, line, sizeof(line), &linenum) != -1) {
  		char *cp, *key_options = NULL;
 +		char *user;
  
- 		/* Skip leading whitespace, empty and comment lines. */
- 		for (cp = line; *cp == ' ' || *cp == '\t'; cp++)
-@@ -237,6 +232,24 @@
- 		}
- 		if (key_equal(found, key) &&
- 		    auth_parse_options(pw, key_options, file, linenum) == 1) {
+ 		auth_clear_options();
+ 
+@@ -336,6 +332,24 @@
+ 			found_key = 1;
+ 			break;
+ 		} else if (!key_is_cert_authority && key_equal(found, key)) {
 +			if (*options.authorized_keys_file=='/') {
 +				/* Check the user. */
 +				for(; *cp == ' ' || *cp == '\t'; cp++)
@@ -156,7 +152,7 @@ diff -Nur openssh-4.2p1.old/auth2-pubkey.c openssh-4.2p1/auth2-pubkey.c
  			found_key = 1;
  			debug("matching key found: file %s, line %lu",
  			    file, linenum);
-@@ -247,7 +260,6 @@
+@@ -346,7 +360,6 @@
  			break;
  		}
  	}

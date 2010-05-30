@@ -1,12 +1,27 @@
-move things around so hpn applies cleanly when using X509
+Move things around so hpn applies cleanly when using X509.
 
---- servconf.c
-+++ servconf.c
-@@ -106,6 +106,18 @@
+--- openssh-5.2p1+x509/Makefile.in
++++ openssh-5.2p1+x509/Makefile.in
+@@ -44,11 +44,12 @@
+ CC=@CC@
+ LD=@LD@
+ CFLAGS=@CFLAGS@
+-CPPFLAGS=-I. -I$(srcdir) @CPPFLAGS@ @LDAP_CPPFLAGS@ $(PATHS) @DEFS@
++CPPFLAGS=-I. -I$(srcdir) @CPPFLAGS@ $(PATHS) @DEFS@
+ LIBS=@LIBS@
+ SSHDLIBS=@SSHDLIBS@
+ LIBEDIT=@LIBEDIT@
+ LIBLDAP=@LDAP_LDFLAGS@ @LDAP_LIBS@
++CPPFLAGS += @LDAP_CPPFLAGS@
+ AR=@AR@
+ AWK=@AWK@
+ RANLIB=@RANLIB@
+--- openssh-5.2p1+x509/servconf.c
++++ openssh-5.2p1+x509/servconf.c
+@@ -108,6 +108,17 @@
  	options->log_level = SYSLOG_LEVEL_NOT_SET;
  	options->rhosts_rsa_authentication = -1;
  	options->hostbased_authentication = -1;
-+
 +	options->hostbased_algorithms = NULL;
 +	options->pubkey_algorithms = NULL;
 +	ssh_x509flags_initialize(&options->x509flags, 1);
@@ -21,10 +36,10 @@ move things around so hpn applies cleanly when using X509
  	options->hostbased_uses_name_from_packet_only = -1;
  	options->rsa_authentication = -1;
  	options->pubkey_authentication = -1;
-@@ -146,18 +158,6 @@
- 	options->permit_tun = -1;
- 	options->num_permitted_opens = -1;
+@@ -152,18 +163,6 @@
  	options->adm_forced_command = NULL;
+ 	options->chroot_directory = NULL;
+ 	options->zero_knowledge_password_authentication = -1;
 -
 -	options->hostbased_algorithms = NULL;
 -	options->pubkey_algorithms = NULL;
@@ -40,7 +55,7 @@ move things around so hpn applies cleanly when using X509
  }
  
  void
-@@ -329,6 +329,16 @@
+@@ -341,6 +340,16 @@
  	/* Portable-specific options */
  	sUsePAM,
  	/* Standard Options */
@@ -57,10 +72,10 @@ move things around so hpn applies cleanly when using X509
  	sPort, sHostKeyFile, sServerKeyBits, sLoginGraceTime, sKeyRegenerationTime,
  	sPermitRootLogin, sLogFacility, sLogLevel,
  	sRhostsRSAAuthentication, sRSAAuthentication,
-@@ -351,16 +361,6 @@
- 	sGssAuthentication, sGssCleanupCreds, sAcceptEnv, sPermitTunnel,
- 	sMatch, sPermitOpen, sForceCommand,
- 	sUsePrivilegeSeparation,
+@@ -364,16 +373,6 @@
+ 	sMatch, sPermitOpen, sForceCommand, sChrootDirectory,
+ 	sUsePrivilegeSeparation, sAllowAgentForwarding,
+ 	sZeroKnowledgePasswordAuthentication,
 -	sHostbasedAlgorithms,
 -	sPubkeyAlgorithms,
 -	sX509KeyAlgorithm,
