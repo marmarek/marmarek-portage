@@ -2,6 +2,9 @@
 # Copyright 1999-2007 Gentoo Foundation; Distributed under the GPL v2
 # $Header: /var/cvsroot/gentoo-x86/net-fs/samba/ChangeLog,v 1.316 2007/11/18 13:43:39 corsair Exp $
 
+  29 May 2010; Marek Marczykowski <marmarek@staszic.waw.pl> samba-3.5.2-r1.ebuild:
+  with-utmp
+
   19 Nov 2007; Marek Marczykowski <marmarek@staszic.waw.pl> samba-3.0.26a-r2.ebuid,samba-3.0.27.ebuild:
   oav support
 
