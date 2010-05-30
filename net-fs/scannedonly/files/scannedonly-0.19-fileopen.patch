@@ -1,0 +1,11 @@
+--- src/scannedonlyd_clamav.c	2010-03-28 14:51:46.000000000 +0200
++++ src/scannedonlyd_clamav.c	2010-05-12 20:01:03.673400360 +0200
+@@ -168,7 +168,7 @@
+ 				syslog(LOG_NOTICE, "when trying to copy %s to %s, failed to open %s %d: %s\n",from,to,from,errno,strerror(errno));
+ 				return -1;
+ 			}
+-			tofd = open(to, O_WRONLY | O_CREAT);
++			tofd = open(to, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+ 			if (!tofd) {
+ 				syslog(LOG_NOTICE, "when trying to copy %s to %s, failed to open %s %d: %s\n",from,to,to,errno,strerror(errno)); 
+ 				return -1;
