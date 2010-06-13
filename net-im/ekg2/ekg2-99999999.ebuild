@@ -56,6 +56,8 @@ src_unpack() {
 	# Instead it features a runtime option which defaults to on
 	#! use debug && epatch ${FILESDIR}/${PN}-20061202-no-default-debug.patch
 
+	epatch ${FILESDIR}/ekg2-sim-cp1250.patch
+
 	NOCONFIGURE=yes ./autogen.sh
 }
 
