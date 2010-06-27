@@ -13,7 +13,7 @@ PATCHSET_REV="-r4"
 SIDEBAR_PATCH_N="patch-1.5.20.sidebar.20090619.txt"
 
 # labels patch source
-#LABELS_PATCH_N="patch-1.5.1.dgc.xlabel_ext.5"
+#LABELS_PATCH_N="patch-1.5.17.dgc.xlabel_ext.5"
 #		http://home.uchicago.edu/~dgc/sw/mutt/${LABELS_PATCH_N}
 
 DESCRIPTION="a small but very powerful text-based mail client"

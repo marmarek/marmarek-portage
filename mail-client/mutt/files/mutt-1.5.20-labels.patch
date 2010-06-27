@@ -1,9 +1,7 @@
-Source: http://home.uchicago.edu/~dgc/mutt/#x-label
-
 diff -Naru mutt-1.5.20.orig/OPS mutt-1.5.20/OPS
---- mutt-1.5.20.orig/OPS	2009-05-13 07:01:13.000000000 +0200
-+++ mutt-1.5.20/OPS	2010-03-05 15:35:06.000000000 +0100
-@@ -56,6 +56,7 @@
+--- mutt-1.5.20.orig/OPS	2010-06-27 12:43:41.852008704 +0200
++++ mutt-1.5.20/OPS	2010-06-27 12:38:38.812007508 +0200
+@@ -61,6 +61,7 @@
  OP_DISPLAY_ADDRESS "display full address of sender"
  OP_DISPLAY_HEADERS "display message and toggle header weeding"
  OP_DISPLAY_MESSAGE "display a message"
@@ -12,13 +10,43 @@ diff -Naru mutt-1.5.20.orig/OPS mutt-1.5.20/OPS
  OP_EDITOR_BACKSPACE "delete the char in front of the cursor"
  OP_EDITOR_BACKWARD_CHAR "move the cursor one character to the left"
 diff -Naru mutt-1.5.20.orig/PATCHES mutt-1.5.20/PATCHES
---- mutt-1.5.20.orig/PATCHES	2008-11-11 20:55:46.000000000 +0100
-+++ mutt-1.5.20/PATCHES	2010-03-05 15:35:06.000000000 +0100
-@@ -0,0 +1 @@
-+dgc.xlabel_ext.5
+--- mutt-1.5.20.orig/PATCHES	2010-06-27 12:43:41.852008704 +0200
++++ mutt-1.5.20/PATCHES	2010-06-27 12:38:38.812007508 +0200
+@@ -1,3 +1,4 @@
++patch-1.5.16.dgc.xlabel_ext.9
+ dgc.subjrx
+ fg.smarttime
+ vvv.initials
+diff -Naru mutt-1.5.20.orig/commands.c mutt-1.5.20/commands.c
+--- mutt-1.5.20.orig/commands.c	2010-06-27 12:43:41.917006329 +0200
++++ mutt-1.5.20/commands.c	2010-06-27 12:38:38.972005739 +0200
+@@ -532,9 +532,9 @@
+   int method = Sort; /* save the current method in case of abort */
+ 
+   switch (mutt_multi_choice (reverse ?
+-			     _("Rev-Sort (d)ate/(f)rm/(r)ecv/(s)ubj/t(o)/(t)hread/(u)nsort/si(z)e/s(c)ore/s(p)am?: ") :
+-			     _("Sort (d)ate/(f)rm/(r)ecv/(s)ubj/t(o)/(t)hread/(u)nsort/si(z)e/s(c)ore/s(p)am?: "),
+-			     _("dfrsotuzcp")))
++			     _("Rev-Sort Date/Frm/Recv/Subj/tO/Thread/Unsort/siZe/sCore/sPam/Label?: ") :
++			     _("Sort Date/Frm/Recv/Subj/tO/Thread/Unsort/siZe/sCore/sPam/Label?: "),
++			     _("dfrsotuzcpl")))
+   {
+   case -1: /* abort - don't resort */
+     return -1;
+@@ -578,6 +578,10 @@
+   case 10: /* s(p)am */
+     Sort = SORT_SPAM;
+     break;
++
++  case 11: /* (l)abel */
++    Sort = SORT_LABEL;
++    break;
+   }
+   if (reverse)
+     Sort |= SORT_REVERSE;
 diff -Naru mutt-1.5.20.orig/copy.c mutt-1.5.20/copy.c
---- mutt-1.5.20.orig/copy.c	2009-06-13 01:38:52.000000000 +0200
-+++ mutt-1.5.20/copy.c	2010-03-05 15:35:06.000000000 +0100
+--- mutt-1.5.20.orig/copy.c	2010-06-27 12:43:41.985005591 +0200
++++ mutt-1.5.20/copy.c	2010-06-27 12:38:39.004007106 +0200
 @@ -111,6 +111,10 @@
  	ignore = 0;
        }
@@ -30,20 +58,13 @@ diff -Naru mutt-1.5.20.orig/copy.c mutt-1.5.20/copy.c
        if (!ignore && fputs (buf, out) == EOF)
  	return (-1);
      }
-@@ -301,6 +305,7 @@
- 	  break;
- 	}
-       }
-+
-     }
-   }
- 
-@@ -412,6 +417,14 @@
+@@ -412,6 +416,15 @@
        fprintf (out, "Lines: %d\n", h->lines);
    }
  
 +  if (flags & CH_UPDATE_LABEL && h->xlabel_changed)
 +  {
++    h->xlabel_changed = 0;
 +    if (h->env->x_label != NULL)
 +      if (fprintf(out, "X-Label: %s\n", h->env->x_label) !=
 +		  10 + strlen(h->env->x_label))
@@ -65,21 +86,19 @@ diff -Naru mutt-1.5.20.orig/copy.c mutt-1.5.20/copy.c
      if (flags & M_CM_PREFIX)
 diff -Naru mutt-1.5.20.orig/copy.h mutt-1.5.20/copy.h
 --- mutt-1.5.20.orig/copy.h	2009-06-13 01:38:52.000000000 +0200
-+++ mutt-1.5.20/copy.h	2010-03-05 15:39:02.000000000 +0100
-@@ -53,7 +53,8 @@
++++ mutt-1.5.20/copy.h	2010-06-27 12:41:39.845006017 +0200
+@@ -53,6 +53,7 @@
  #define CH_UPDATE_IRT     (1<<16) /* update In-Reply-To: */
  #define CH_UPDATE_REFS    (1<<17) /* update References: */
  #define CH_DISPLAY        (1<<18) /* display result to user */
--
-+/* this absurd location to avoid conflict with cd.edit_threads -- *sigh* */
-+#define CH_UPDATE_LABEL    (1<<20) /* update X-Label: from hdr->env->x_label? */
++#define CH_UPDATE_LABEL   (1<<19) /* update X-Label: from hdr->env->x_label? */
+ 
  
  int mutt_copy_hdr (FILE *, FILE *, LOFF_T, LOFF_T, int, const char *);
- 
 diff -Naru mutt-1.5.20.orig/curs_main.c mutt-1.5.20/curs_main.c
---- mutt-1.5.20.orig/curs_main.c	2009-06-14 04:48:36.000000000 +0200
-+++ mutt-1.5.20/curs_main.c	2010-03-05 15:35:06.000000000 +0100
-@@ -1926,6 +1926,21 @@
+--- mutt-1.5.20.orig/curs_main.c	2010-06-27 12:43:42.009006227 +0200
++++ mutt-1.5.20/curs_main.c	2010-06-27 12:38:39.032006793 +0200
+@@ -2166,6 +2166,21 @@
  	menu->redraw = REDRAW_FULL;
  	break;
  
@@ -101,44 +120,51 @@ diff -Naru mutt-1.5.20.orig/curs_main.c mutt-1.5.20/curs_main.c
        case OP_LIST_REPLY:
  
  	CHECK_ATTACH;
-diff -Naru mutt-1.5.20.orig/doc/manual.txt mutt-1.5.20/doc/manual.txt
---- mutt-1.5.20.orig/doc/manual.txt	2009-06-14 20:54:56.000000000 +0200
-+++ mutt-1.5.20/doc/manual.txt	2010-03-05 15:36:48.000000000 +0100
-@@ -4072,7 +4072,10 @@
- ?X-Label:? fields in the index, and Mutt's pattern-matcher can match regular
- expressions to ?X-Label:? fields with the ??y? selector. ?X-Label:? is not a
- standard message header field, but it can easily be inserted by procmail and
--other mail filtering agents.
-+other mail filtering agents.  You can change or delete the
-+``X-Label:'' field within Mutt using the ``edit-label'' command,
-+bound to the ``y'' key by default.  This works for tagged messages,
-+too.
+diff -Naru mutt-1.5.20.orig/doc/manual.xml.head mutt-1.5.20/doc/manual.xml.head
+--- mutt-1.5.20.orig/doc/manual.xml.head	2010-06-27 12:43:42.045007493 +0200
++++ mutt-1.5.20/doc/manual.xml.head	2010-06-27 12:38:39.100006199 +0200
+@@ -5532,6 +5532,18 @@
+ </para>
  
- Lastly, Mutt has the ability to sort the mailbox into threads. A thread is a
- group of messages which all relate to the same subject. This is usually
+ <para>
++You can change or delete the ``X-Label:'' field within Mutt using the
++``edit-label'' command, bound to the ``y'' key by default.  This works
++for tagged messages, too.
++</para>
++
++<para>
++You can change or delete the ``X-Label:'' field within Mutt using the
++``edit-label'' command, bound to the ``y'' key by default.  This works
++for tagged messages, too.
++</para>
++
++<para>
+ Lastly, Mutt has the ability to <link linkend="sort">sort</link> the mailbox into
+ <link linkend="threads">threads</link>.  A thread is a group of messages which all relate to the same
+ subject.  This is usually organized into a tree-like structure where a
 diff -Naru mutt-1.5.20.orig/functions.h mutt-1.5.20/functions.h
---- mutt-1.5.20.orig/functions.h	2009-04-30 07:36:17.000000000 +0200
-+++ mutt-1.5.20/functions.h	2010-03-05 15:35:16.000000000 +0100
-@@ -99,6 +99,7 @@
+--- mutt-1.5.20.orig/functions.h	2010-06-27 12:43:42.144005887 +0200
++++ mutt-1.5.20/functions.h	2010-06-27 12:38:39.136006321 +0200
+@@ -103,6 +103,7 @@
    { "delete-thread",		OP_DELETE_THREAD,		"\004" },
    { "delete-subthread",		OP_DELETE_SUBTHREAD,		"\033d" },
    { "edit",			OP_EDIT_MESSAGE,		"e" },
 +  { "edit-label",		OP_EDIT_LABEL,			"y" },
    { "edit-type",		OP_EDIT_TYPE,			"\005" },
    { "forward-message",		OP_FORWARD_MESSAGE,		"f" },
-   { "flag-message",		OP_FLAG_MESSAGE,		"F" },
-@@ -186,6 +187,7 @@
+ #ifdef USE_NNTP
+@@ -209,6 +210,7 @@
    { "set-flag",  	OP_MAIN_SET_FLAG,		"w" },
    { "clear-flag",       OP_MAIN_CLEAR_FLAG,		"W" },
    { "edit",		OP_EDIT_MESSAGE,		"e" },
 +  { "edit-label",	OP_EDIT_LABEL,			"y" },
    { "edit-type",	OP_EDIT_TYPE,			"\005" },
-   { "forward-message",	OP_FORWARD_MESSAGE,		"f" },
-   { "flag-message",	OP_FLAG_MESSAGE,		"F" },
+ #ifdef USE_NNTP
+   { "followup-message",	OP_FOLLOWUP,			"F" },
 diff -Naru mutt-1.5.20.orig/headers.c mutt-1.5.20/headers.c
---- mutt-1.5.20.orig/headers.c	2010-03-05 15:34:34.000000000 +0100
-+++ mutt-1.5.20/headers.c	2010-03-05 15:35:16.000000000 +0100
-@@ -215,3 +215,59 @@
+--- mutt-1.5.20.orig/headers.c	2010-06-27 12:43:42.201006367 +0200
++++ mutt-1.5.20/headers.c	2010-06-27 12:38:39.160005994 +0200
+@@ -218,3 +218,59 @@
      }
    }
  }
@@ -175,7 +201,7 @@ diff -Naru mutt-1.5.20.orig/headers.c mutt-1.5.20/headers.c
 +		strncpy(buf, hdr->env->x_label, LONG_STRING);
 +	}
 +
-+	mutt_get_field("Label: ", buf, sizeof(buf), M_CLEAR);
++	mutt_get_field("Label: ", buf, sizeof(buf), 0 /* | M_CLEAR */);
 +	new = buf;
 +	SKIPWS(new);
 +	if (*new == '\0')
@@ -198,10 +224,89 @@ diff -Naru mutt-1.5.20.orig/headers.c mutt-1.5.20/headers.c
 +
 +	return changed;
 +}
+diff -Naru mutt-1.5.20.orig/imap/imap.c mutt-1.5.20/imap/imap.c
+--- mutt-1.5.20.orig/imap/imap.c	2010-06-27 12:43:42.261006151 +0200
++++ mutt-1.5.20/imap/imap.c	2010-06-27 12:38:39.180006973 +0200
+@@ -1225,7 +1225,7 @@
+        * we delete the message and reupload it.
+        * This works better if we're expunging, of course. */
+       if ((h->env && (h->env->refs_changed || h->env->irt_changed)) ||
+-	  h->attach_del)
++	  h->attach_del || h->xlabel_changed)
+       {
+         mutt_message (_("Saving changed messages... [%d/%d]"), n+1,
+                       ctx->msgcount);
+@@ -1235,6 +1235,7 @@
+ 	  dprint (1, (debugfile, "imap_sync_mailbox: Error opening mailbox in append mode\n"));
+ 	else
+ 	  _mutt_save_message (h, appendctx, 1, 0, 0);
++	h->xlabel_changed = 0;
+       }
+     }
+   }
+diff -Naru mutt-1.5.20.orig/imap/message.c mutt-1.5.20/imap/message.c
+--- mutt-1.5.20.orig/imap/message.c	2010-06-27 12:43:42.292015058 +0200
++++ mutt-1.5.20/imap/message.c	2010-06-27 12:38:39.260005684 +0200
+@@ -398,6 +398,7 @@
+   IMAP_CACHE *cache;
+   int read;
+   int rc;
++  char *x_label = NULL;
+   /* Sam's weird courier server returns an OK response even when FETCH
+    * fails. Thanks Sam. */
+   short fetched = 0;
+diff -Naru mutt-1.5.20.orig/init.h mutt-1.5.20/init.h
+--- mutt-1.5.20.orig/init.h	2010-06-27 12:34:09.516008146 +0200
++++ mutt-1.5.20/init.h	2010-06-27 12:39:35.625006941 +0200
+@@ -3573,6 +3573,7 @@
+   { "to",		SORT_TO },
+   { "score",		SORT_SCORE },
+   { "spam",		SORT_SPAM },
++  { "label",		SORT_LABEL },
+   { NULL,               0 }
+ };
+ 
+@@ -3592,6 +3593,7 @@
+   { "to",		SORT_TO },
+   { "score",		SORT_SCORE },
+   { "spam",		SORT_SPAM },
++  { "label",		SORT_LABEL },
+   { NULL,               0 }
+ };
+ 
+diff -Naru mutt-1.5.20.orig/mh.c mutt-1.5.20/mh.c
+--- mutt-1.5.20.orig/mh.c	2010-06-27 12:43:55.660007017 +0200
++++ mutt-1.5.20/mh.c	2010-06-27 12:38:39.316006823 +0200
+@@ -1559,7 +1559,7 @@
+ {
+   HEADER *h = ctx->hdrs[msgno];
+ 
+-  if (h->attach_del || 
++  if (h->attach_del || h->xlabel_changed ||
+       (h->env && (h->env->refs_changed || h->env->irt_changed)))
+     if (mh_rewrite_message (ctx, msgno) != 0)
+       return -1;
+@@ -1571,7 +1571,7 @@
+ {
+   HEADER *h = ctx->hdrs[msgno];
+ 
+-  if (h->attach_del || 
++  if (h->attach_del || h->xlabel_changed ||
+       (h->env && (h->env->refs_changed || h->env->irt_changed)))
+   {
+     /* when doing attachment deletion/rethreading, fall back to the MH case. */
+@@ -1693,6 +1693,7 @@
+       }
+     }
+     else if (ctx->hdrs[i]->changed || ctx->hdrs[i]->attach_del ||
++	     ctx->hdrs[i]->xlabel_changed ||
+ 	     (ctx->magic == M_MAILDIR
+ 	      && (option (OPTMAILDIRTRASH) || ctx->hdrs[i]->trash)
+ 	      && (ctx->hdrs[i]->deleted != ctx->hdrs[i]->trash)))
 diff -Naru mutt-1.5.20.orig/mutt.h mutt-1.5.20/mutt.h
---- mutt-1.5.20.orig/mutt.h	2010-03-05 15:34:36.000000000 +0100
-+++ mutt-1.5.20/mutt.h	2010-03-05 15:35:17.000000000 +0100
-@@ -719,6 +719,7 @@
+--- mutt-1.5.20.orig/mutt.h	2010-06-27 12:43:55.728006808 +0200
++++ mutt-1.5.20/mutt.h	2010-06-27 12:38:39.344006119 +0200
+@@ -770,6 +770,7 @@
  					 * This flag is used by the maildir_trash
  					 * option.
  					 */
@@ -209,10 +314,32 @@ diff -Naru mutt-1.5.20.orig/mutt.h mutt-1.5.20/mutt.h
    
    /* timezone of the sender of this message */
    unsigned int zhours : 5;
+diff -Naru mutt-1.5.20.orig/pager.c mutt-1.5.20/pager.c
+--- mutt-1.5.20.orig/pager.c	2010-06-27 12:43:57.661007984 +0200
++++ mutt-1.5.20/pager.c	2010-06-27 12:38:39.420007298 +0200
+@@ -2782,6 +2782,18 @@
+ 	redraw = REDRAW_FULL;
+ 	break;
+ 
++     case OP_EDIT_LABEL:
++        CHECK_MODE(IsHeader (extra));
++        rc = mutt_label_message(extra->hdr);
++        if (rc > 0) {
++          Context->changed = 1;
++          redraw = REDRAW_FULL;
++          mutt_message ("%d label%s changed.", rc, rc == 1 ? "" : "s");
++        }
++        else {
++          mutt_message _("No labels changed.");
++        }
++        break;
+ 
+       case OP_MAIL_KEY:
+         if (!(WithCrypto & APPLICATION_PGP))
 diff -Naru mutt-1.5.20.orig/protos.h mutt-1.5.20/protos.h
---- mutt-1.5.20.orig/protos.h	2010-03-05 15:34:36.000000000 +0100
-+++ mutt-1.5.20/protos.h	2010-03-05 15:37:29.000000000 +0100
-@@ -183,6 +183,7 @@
+--- mutt-1.5.20.orig/protos.h	2010-06-27 12:43:57.729005497 +0200
++++ mutt-1.5.20/protos.h	2010-06-27 12:38:39.456006670 +0200
+@@ -185,6 +185,7 @@
  void mutt_edit_file (const char *, const char *);
  void mutt_edit_headers (const char *, const char *, HEADER *, char *, size_t);
  int mutt_filter_unprintable (char **);
@@ -220,3 +347,63 @@ diff -Naru mutt-1.5.20.orig/protos.h mutt-1.5.20/protos.h
  void mutt_curses_error (const char *, ...);
  void mutt_curses_message (const char *, ...);
  void mutt_enter_command (void);
+diff -Naru mutt-1.5.20.orig/sort.c mutt-1.5.20/sort.c
+--- mutt-1.5.20.orig/sort.c	2010-06-27 12:43:57.785006262 +0200
++++ mutt-1.5.20/sort.c	2010-06-27 12:38:39.476006474 +0200
+@@ -219,6 +219,36 @@
+   return (SORTCODE(result));
+ }
+ 
++int compare_label (const void *a, const void *b)
++{
++  HEADER **ppa = (HEADER **) a;
++  HEADER **ppb = (HEADER **) b;
++  int     ahas, bhas, result;
++
++  /* As with compare_spam, not all messages will have the x-label
++   * property.  Blank X-Labels are treated as null in the index
++   * display, so we'll consider them as null for sort, too.       */
++  ahas = (*ppa)->env && (*ppa)->env->x_label && *((*ppa)->env->x_label);
++  bhas = (*ppb)->env && (*ppb)->env->x_label && *((*ppb)->env->x_label);
++
++  /* First we bias toward a message with a label, if the other does not. */
++  if (ahas && !bhas)
++    return (SORTCODE(-1));
++  if (!ahas && bhas)
++    return (SORTCODE(1));
++
++  /* If neither has a label, use aux sort. */
++  if (!ahas && !bhas)
++  {
++    AUXSORT(result, a, b);
++    return (SORTCODE(result));
++  }
++
++  /* If both have a label, we just do a lexical compare. */
++  result = mutt_strcasecmp((*ppa)->env->x_label, (*ppb)->env->x_label);
++  return (SORTCODE(result));
++}
++
+ sort_t *mutt_get_sort_func (int method)
+ {
+   switch (method & SORT_MASK)
+@@ -241,6 +271,8 @@
+       return (compare_score);
+     case SORT_SPAM:
+       return (compare_spam);
++    case SORT_LABEL:
++      return (compare_label);
+     default:
+       return (NULL);
+   }
+diff -Naru mutt-1.5.20.orig/sort.h mutt-1.5.20/sort.h
+--- mutt-1.5.20.orig/sort.h	2010-06-27 12:43:57.845006045 +0200
++++ mutt-1.5.20/sort.h	2010-06-27 12:38:39.536006200 +0200
+@@ -31,6 +31,7 @@
+ #define SORT_KEYID	12
+ #define SORT_TRUST	13
+ #define SORT_SPAM	14
++#define SORT_LABEL	15
+ /* dgc: Sort & SortAux are shorts, so I'm bumping these bitflags up from
+  * bits 4 & 5 to bits 8 & 9 to make room for more sort keys in the future. */
+ #define SORT_MASK	0xff
