@@ -1,0 +1,31 @@
+diff -ru libtirpc-0.2.1.orig/configure.ac libtirpc-0.2.1/configure.ac
+--- libtirpc-0.2.1.orig/configure.ac	2009-11-30 15:04:55.000000000 +0100
++++ libtirpc-0.2.1/configure.ac	2010-09-24 00:34:31.000000000 +0200
+@@ -11,8 +11,13 @@
+ AM_CONDITIONAL(GSS, test x$gss = xtrue)
+ if test x$gss = xtrue; then
+ 	AC_DEFINE(HAVE_LIBGSSAPI, 1, [])
+-	PKG_CHECK_MODULES(GSSGLUE, libgssglue, [],
+-	AC_MSG_ERROR([Unable to locate information required to use libgssglue.]))
++	PKG_CHECK_MODULES([GSSGLUE], [libgssglue],
++		[echo GSSGLUE found; GSSAPI_IMPLEMENTATION=libgssglue],
++		[PKG_CHECK_MODULES([GSSGLUE], [heimdal-gssapi],
++		[echo HEIMDAL found; GSSAPI_IMPLEMENTATION=heimdal-gssapi],
++		[AC_MSG_ERROR([Unable to locate information required to use libgssglue.])])])
++	AC_SUBST([GSSAPI_IMPLEMENTATION])
++
+ fi
+ 
+ AC_PROG_CC
+diff -ru libtirpc-0.2.1.orig/libtirpc.pc.in libtirpc-0.2.1/libtirpc.pc.in
+--- libtirpc-0.2.1.orig/libtirpc.pc.in	2009-11-30 15:04:55.000000000 +0100
++++ libtirpc-0.2.1/libtirpc.pc.in	2010-09-24 00:31:34.000000000 +0200
+@@ -5,7 +5,7 @@
+ 
+ Name: libtirpc
+ Description: Transport Independent RPC Library
+-Requires:
++Requires: @GSSAPI_IMPLEMENTATION@
+ Version: @PACKAGE_VERSION@
+ Libs: -L@libdir@ -ltirpc
+ Cflags: -I@includedir@/tirpc
