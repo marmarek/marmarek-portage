@@ -1,32 +1,19 @@
 #!/sbin/runscript
 # Copyright 1999-2008 Gentoo Foundation
 # Distributed under the terms of the GNU General Public License v2
-# $Header: /var/cvsroot/gentoo-x86/net-fs/nfs-utils/files/rpc.svcgssd.initd,v 1.2 2008/04/21 07:56:15 vapier Exp $
+# $Header: /var/cvsroot/gentoo-x86/net-fs/nfs-utils/files/rpc.svcgssd.initd,v 1.5 2008/10/26 09:02:47 vapier Exp $
 
 [ -e /etc/conf.d/nfs ] && . /etc/conf.d/nfs
 
 depend() {
 	use ypbind net
-	need portmap
+	need portmap rpc.pipefs
 	after quota
 }
 
-mount_pipefs() {
-	if grep -qs rpc_pipefs /proc/filesystems ; then
-		if ! grep -qs "rpc_pipefs /var/lib/nfs/rpc_pipefs" /proc/mounts ; then
-			mkdir -p /var/lib/nfs/rpc_pipefs
-			ebegin "Mounting RPC pipefs"
-			mount -t rpc_pipefs rpc_pipefs /var/lib/nfs/rpc_pipefs
-			eend $?
-		fi
-	fi
-}
-
 start() {
-	mount_pipefs
-
 	ebegin "Starting svcgssd"
-	start-stop-daemon --start --exec /usr/sbin/rpc.svcgssd ${OPTS_RPC_SVCGSSD}
+	start-stop-daemon --start --exec /usr/sbin/rpc.svcgssd -- ${OPTS_RPC_SVCGSSD}
 	eend $?
 }
 

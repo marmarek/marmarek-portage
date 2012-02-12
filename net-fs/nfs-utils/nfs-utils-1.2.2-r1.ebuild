@@ -40,6 +40,11 @@ DEPEND="${DEPEND_COMMON}
 src_prepare() {
 	epatch "${FILESDIR}"/${PN}-1.1.4-mtab-sym.patch
 	epatch "${FILESDIR}"/${PN}-1.1.4-no-exec.patch
+
+
+
+
+
 	sed -i -e 's/$(RPCSECGSS_CFLAGS) $(KRBCFLAGS)/$(KRBCFLAGS) $(RPCSECGSS_CFLAGS)/' utils/gssd/Makefile.am
 
 	epatch ${FILESDIR}/${PN}-1.1.1-heimdal.patch
@@ -47,6 +52,7 @@ src_prepare() {
 	epatch ${FILESDIR}/${PN}-1.1.3-gssd-heimdal.patch
 	epatch ${FILESDIR}/${PN}-1.2.0-free_error_message.patch
 	epatch ${FILESDIR}/${PN}-1.2.2-no-libgssglue.patch
+	epatch ${FILESDIR}/${PN}-1.2.2-heimdal-no-gssglue.patch
 	AT_M4DIR=aclocal eautoreconf
 }
 
@@ -58,7 +64,7 @@ src_configure() {
 		$(use_enable nfsv3) \
 		$(use_enable nfsv4) \
 		$(use_enable ipv6) \
-		$(use nfsv4 && use_enable kerberos gss || echo "--disable-gss")
+		$(use_enable kerberos gss || echo "--disable-gss")
 }
 
 src_install() {
@@ -84,9 +90,9 @@ src_install() {
 	local f list="" opt_need=""
 	if use nfsv4 ; then
 		opt_need="rpc.idmapd"
-		list="${list} rpc.idmapd rpc.pipefs"
-		use kerberos && list="${list} rpc.gssd rpc.svcgssd"
+		list="${list} rpc.idmapd"
 	fi
+	use kerberos && list="${list} rpc.gssd rpc.svcgssd rpc.pipefs"
 	for f in nfs nfsmount rpc.statd ${list} ; do
 		newinitd "${FILESDIR}"/${f}.initd ${f} || die "doinitd ${f}"
 	done

@@ -91,8 +91,11 @@ src_prepare() {
 
 	use sidebar && epatch "${PATCHDIR}"/sidebar.20090619.patch
 
-	epatch "${FILESDIR}"/mutt-1.5.20-smime-encrypt-self.patch
 
+
+
+
+	epatch "${FILESDIR}"/mutt-1.5.20-smime-encrypt-self.patch
 	# patch version string for bug reports
 	sed -i -e 's/"Mutt %s (%s)"/"Mutt %s (%s, Gentoo '"${PVR}"')"/' \
 		muttlib.c || die "failed patching in Gentoo version"
