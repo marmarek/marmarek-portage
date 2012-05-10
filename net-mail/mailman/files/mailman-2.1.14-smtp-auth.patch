@@ -1,0 +1,23 @@
+--- Mailman/Defaults.py.in.orig	2012-05-11 00:53:29.917387921 +0200
++++ Mailman/Defaults.py.in	2012-05-11 00:53:53.753152083 +0200
+@@ -456,6 +456,9 @@
+ SMTPHOST = 'localhost'
+ SMTPPORT = 0                                      # default from smtplib
+ 
++SMTPUSER = None
++SMTPPASS = None
++
+ # Command for direct command pipe delivery to sendmail compatible program,
+ # when DELIVERY_MODULE is 'Sendmail'.
+ SENDMAIL_CMD = '/usr/lib/sendmail'
+--- Mailman/Handlers/SMTPDirect.py.orig	2012-05-11 00:51:43.246968056 +0200
++++ Mailman/Handlers/SMTPDirect.py	2012-05-11 00:53:18.006006046 +0200
+@@ -62,6 +62,8 @@
+     def __connect(self):
+         self.__conn = smtplib.SMTP()
+         self.__conn.connect(mm_cfg.SMTPHOST, mm_cfg.SMTPPORT)
++        if mm_cfg.SMTPUSER is not None and mm_cfg.SMTPPASS is not None:
++            self.__conn.login(mm_cfg.SMTPUSER, mm_cfg.SMTPPASS)
+         self.__numsessions = mm_cfg.SMTP_MAX_SESSIONS_PER_CONNECTION
+ 
+     def sendmail(self, envsender, recips, msgtext):
