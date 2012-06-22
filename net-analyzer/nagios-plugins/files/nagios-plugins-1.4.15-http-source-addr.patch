@@ -1,0 +1,136 @@
+diff -Naur nagios-plugins-1.4.15.orig/plugins/check_http.c nagios-plugins-1.4.15/plugins/check_http.c
+--- nagios-plugins-1.4.15.orig/plugins/check_http.c	2012-06-22 13:12:46.000000000 +0200
++++ nagios-plugins-1.4.15/plugins/check_http.c	2012-06-22 13:54:51.000000000 +0200
+@@ -93,6 +93,7 @@
+ char server_port_text[6] = "";
+ char server_type[6] = "http";
+ char *server_address;
++char *source_address = 0;
+ char *host_name;
+ char *server_url;
+ char *user_agent;
+@@ -194,6 +195,7 @@
+     {"post", required_argument, 0, 'P'},
+     {"method", required_argument, 0, 'j'},
+     {"IP-address", required_argument, 0, 'I'},
++    {"source", required_argument, 0, 'F'},
+     {"url", required_argument, 0, 'u'},
+     {"port", required_argument, 0, 'p'},
+     {"authorization", required_argument, 0, 'a'},
+@@ -235,7 +237,7 @@
+   }
+ 
+   while (1) {
+-    c = getopt_long (argc, argv, "Vvh46t:c:w:A:k:H:P:j:T:I:a:b:e:p:s:R:r:u:f:C:nlLSm:M:N", longopts, &option);
++    c = getopt_long (argc, argv, "Vvh46t:c:w:A:k:H:P:j:T:I:a:b:e:p:s:R:r:u:f:F:C:nlLSm:M:N", longopts, &option);
+     if (c == -1 || c == EOF)
+       break;
+ 
+@@ -343,6 +345,9 @@
+     case 'I': /* Server IP-address */
+       server_address = strdup (optarg);
+       break;
++    case 'F': /* Source IP address */
++      source_address = strdup (optarg);
++      break;
+     case 'u': /* URL path */
+       server_url = strdup (optarg);
+       server_url_length = strlen (server_url);
+@@ -803,8 +808,16 @@
+   int result = STATE_OK;
+ 
+   /* try to connect to the host at the given port number */
+-  if (my_tcp_connect (server_address, server_port, &sd) != STATE_OK)
+-    die (STATE_CRITICAL, _("HTTP CRITICAL - Unable to open TCP socket\n"));
++  if (source_address == 0)
++  {
++  	if (my_tcp_connect (server_address, server_port, &sd) != STATE_OK)
++   	 die (STATE_CRITICAL, _("HTTP CRITICAL - Unable to open TCP socket\n"));
++  }
++  else
++  {
++  	if (my_tcp_connect_from (server_address, server_port, &sd, source_address) != STATE_OK)
++   	 die (STATE_CRITICAL, _("HTTP CRITICAL - Unable to open TCP socket\n"));
++  }
+ #ifdef HAVE_SSL
+   if (use_ssl == TRUE) {
+     np_net_ssl_init_with_hostname(sd, (use_sni ? host_name : NULL));
+@@ -1328,6 +1341,8 @@
+   printf ("    %s\n", _("Append a port to include it in the header (eg: example.com:5000)"));
+   printf (" %s\n", "-I, --IP-address=ADDRESS");
+   printf ("    %s\n", _("IP address or name (use numeric address if possible to bypass DNS lookup)."));
++  printf (" %s\n", "-F, --source=ADDRESS");
++  printf ("    %s\n", _("Source IP address"));
+   printf (" %s\n", "-p, --port=INTEGER");
+   printf ("    %s", _("Port number (default: "));
+   printf ("%d)\n", HTTP_PORT);
+@@ -1442,5 +1457,5 @@
+   printf ("       [-e <expect>] [-s string] [-l] [-r <regex> | -R <case-insensitive regex>]\n");
+   printf ("       [-P string] [-m <min_pg_size>:<max_pg_size>] [-4|-6] [-N] [-M <age>]\n");
+   printf ("       [-A string] [-k string] [-S] [--sni] [-C <age>] [-T <content-type>]\n");
+-  printf ("       [-j method]\n");
++  printf ("       [-j method] [-F source_ip]\n");
+ }
+diff -Naur nagios-plugins-1.4.15.orig/plugins/netutils.c nagios-plugins-1.4.15/plugins/netutils.c
+--- nagios-plugins-1.4.15.orig/plugins/netutils.c	2012-06-22 13:12:46.000000000 +0200
++++ nagios-plugins-1.4.15/plugins/netutils.c	2012-06-22 13:56:58.000000000 +0200
+@@ -158,11 +158,19 @@
+ 
+ /* opens a tcp or udp connection to a remote host or local socket */
+ int
+-np_net_connect (const char *host_name, int port, int *sd, int proto)
++np_net_connect(const char *host_name, int port, int *sd, int proto)
++{
++	np_net_connect_from(host_name, port, sd, proto, 0);
++}
++
++/* opens a tcp or udp connection to a remote host (from specified source) or local socket */
++int
++np_net_connect_from (const char *host_name, int port, int *sd, int proto, const char *source_ip_str)
+ {
+ 	struct addrinfo hints;
+ 	struct addrinfo *r, *res;
+ 	struct sockaddr_un su;
++	struct sockaddr_in source_ip;
+ 	char port_str[6], host[MAX_HOST_ADDRESS_LENGTH];
+ 	size_t len;
+ 	int socktype, result;
+@@ -194,6 +202,11 @@
+ 			return STATE_UNKNOWN;
+ 		}
+ 
++		if (source_ip_str != 0) {
++			source_ip.sin_family = AF_INET; // Sorry, no IPv6
++			inet_aton(source_ip_str, (struct in_addr*) &source_ip.sin_addr);
++		}
++
+ 		r = res;
+ 		while (r) {
+ 			/* attempt to create a socket */
+@@ -205,6 +218,14 @@
+ 				return STATE_UNKNOWN;
+ 			}
+ 
++			if (source_ip_str != 0) {
++				result = bind(*sd, (struct sockaddr*) &source_ip, sizeof(source_ip));
++				if(result < 0) {
++					printf("%s\n", _("Bind failed"));
++					return STATE_UNKNOWN;
++				}
++			}
++
+ 			/* attempt to open a connection */
+ 			result = connect (*sd, r->ai_addr, r->ai_addrlen);
+ 
+diff -Naur nagios-plugins-1.4.15.orig/plugins/netutils.h nagios-plugins-1.4.15/plugins/netutils.h
+--- nagios-plugins-1.4.15.orig/plugins/netutils.h	2012-06-22 13:12:46.000000000 +0200
++++ nagios-plugins-1.4.15/plugins/netutils.h	2012-06-22 13:49:36.000000000 +0200
+@@ -59,6 +59,8 @@
+ #define my_tcp_connect(addr, port, s) np_net_connect(addr, port, s, IPPROTO_TCP)
+ #define my_udp_connect(addr, port, s) np_net_connect(addr, port, s, IPPROTO_UDP)
+ int np_net_connect(const char *address, int port, int *sd, int proto);
++#define my_tcp_connect_from(addr, port, s, src) np_net_connect_from(addr, port, s, IPPROTO_TCP, src)
++int np_net_connect_from (const char *host_name, int port, int *sd, int proto, const char *source_ip_str);
+ 
+ /* send_request and wrapper macros */
+ #define send_tcp_request(s, sbuf, rbuf, rsize) \
