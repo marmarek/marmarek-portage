@@ -114,7 +114,7 @@ diff -Naur nagios-plugins-1.4.15.orig/plugins/netutils.c nagios-plugins-1.4.15/p
 +			if (source_ip_str != 0) {
 +				result = bind(*sd, (struct sockaddr*) &source_ip, sizeof(source_ip));
 +				if(result < 0) {
-+					printf("%s\n", _("Bind failed"));
++					printf("%s: %d\n", _("Bind failed"), errno);
 +					return STATE_UNKNOWN;
 +				}
 +			}
