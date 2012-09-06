@@ -1,6 +1,7 @@
 # Copyright 1999-2007 Gentoo Foundation
 # Distributed under the terms of the GNU General Public License v2
 # $Header: /var/cvsroot/gentoo-x86/app-crypt/heimdal/heimdal-0.7.2-r3.ebuild,v 1.14 2007/05/23 01:34:43 cardoe Exp $
+EAPI=2
 
 WANT_AUTOMAKE=1.8
 WANT_AUTOCONF=latest
