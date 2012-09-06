@@ -1,10 +1,8 @@
 # Copyright 1999-2010 Gentoo Foundation
 # Distributed under the terms of the GNU General Public License v2
 # $Header: $
-
-inherit eutils
-
 EAPI=3
+inherit eutils
 
 DESCRIPTION="Daemon for file scanning for samba"
 HOMEPAGE="http://olivier.sessink.nl/scannedonly/"
