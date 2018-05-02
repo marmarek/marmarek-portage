@@ -1,3 +1,0 @@
-#!/bin/sh
-
-rsync -Hazv --delete rsync://rsync.tar.bz/gentoo-portage-pkalin/ /usr/local/portage/pkalin/
